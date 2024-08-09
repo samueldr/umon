@@ -1,0 +1,125 @@
+( ---------------------------------------------- )
+( Monitor program                                )
+( ---------------------------------------------- )
+( NOTE: all labels and macros **HAVE** to start  )
+(       with `monitor:`.                         )
+( ---------------------------------------------- )
+( NOTE: Assumes well-known varvara labels are    )
+(       in scope.                                )
+( ---------------------------------------------- )
+
+( Console read/write )
+%monitor:getc  { .Console/read DEI  }
+%monitor:putc  { .Console/write DEO }
+%monitor:debug { #ab .System/debug DEO }
+
+( Bits manipulation )
+%monitor:nibble:high { #04 SFT }
+%monitor:nibble:low  { #0f AND }
+
+( Start of the memory area for the monitor )
+@monitor
+
+( Scratch area reserved for runtime manipulations )
+@monitor:variables
+	&PC       $2 ( previous PC )
+	&con-vec  $2 ( previous console vector )
+	( Used by the monitor )
+	&current  $2   ( Current address )
+
+( Starts the monitor program, replacing the console vector. )
+@monitor:start
+	STH2r DUP2 ;monitor:variables/PC STA2 ( Store the current PC, to jump back to it when done. )
+	LIT "@ monitor:putc
+	monitor:print-short
+	monitor:print-nl
+	( Save the console vector )
+	[ .Console/vector DEI2 ] ;monitor:variables/con-vec STA2
+	;monitor:on-console .Console/vector DEO2
+	monitor:prompt
+	BRK
+
+( Stops the monitor program, putting back the console vector. )
+@monitor:stop
+	( Restore console vector )
+	;monitor:variables/con-vec LDA2
+	.Console/vector DEO2
+
+	( Fish back PC from when we started )
+	;monitor:variables/PC LDA2
+	STH2
+	JMP2r
+
+( Prints the prompt for the monitor )
+@monitor:prompt
+	monitor:print-nl
+	LIT "$ monitor:putc
+	;monitor:variables/current LDA2
+	monitor:print-short
+	;/ps1 puts
+	JMP2r
+	&ps1 "> 20 00
+
+( Handles monitor input )
+@monitor:on-console
+	monitor:getc
+	DUP LIT "q EQU ?monitor:stop
+	DUP LIT "x NEQ ?{ monitor:debug } ( curlies due to macro usage )
+	DUP LIT 0a EQU ?monitor:prompt
+	POP
+	BRK
+
+( Prints short from stack )
+@monitor:print-short ( short* -: )
+	SWP
+	byte2hex monitor:putc monitor:putc
+( Prints byte from stack )
+@monitor:print-byte  ( byte -: )
+	byte2hex monitor:putc monitor:putc
+	JMP2r
+
+( Prints a newline )
+@monitor:print-nl
+	LIT 0a monitor:putc
+	JMP2r
+
+( Converts a given byte to the nibble chars, big-end on top. )
+( [ big-end on top to allow directly sending stack to .Console/write ] )
+@byte2hex ( value -: charLO charHI )
+	DUP           ( Keep a copy of the value )
+	nibble2hex    ( Convert low to char )
+	SWP           ( Save result / restoring copied value )
+	monitor:nibble:high   ( Keep the high nibble )
+	nibble2hex    ( Convert high to char )
+	JMP2r
+
+( Converts the low nibble to its char )
+@nibble2hex ( nibble -: char )
+	monitor:nibble:low        ( Clamp to [0-f] range )
+	[ DUP #09 GTH ]   ( should we output a letter? )
+	[ #27 MUL ] ADD   ( add offset between ASCII letters and numbers as needed  )
+	[ LIT "0  ] ADD   ( add offset of ASCII char '0' )
+	JMP2r
+
+( Converts the hex chars to the value )
+@hex2value ( str* -: val* )
+	[ LIT2r 0000 ]
+	&w ( str* `acc* -: val* )
+	LDAk /hex2nibble INC #00 EQU ?{
+		[ LITr 40 ] SFT2r LDAk /hex2nibble [ LITr 00 ] STH
+		ADD2r INC2 LDAk ?&w }
+	POP2 STH2r
+	JMP2r
+
+( Converts the hex char [0-f] to the value )
+&hex2nibble ( c -: val! )
+	( dec ) [ LIT "0 ] SUB DUP #09 GTH ?{ JMP2r }
+	( hex ) #27 SUB DUP #0f GTH ?{ JMP2r }
+	( err ) POP #ff JMP2r
+
+( Ouputs a string to the console )
+@monitor:puts ( str* -: )
+	LDAk console:putc
+	INC2 LDAk ?puts
+	POP2
+	JMP2r

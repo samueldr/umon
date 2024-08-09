@@ -1,0 +1,64 @@
+~varvara.tal
+
+%NL { 0a }
+%SP { 20 }
+
+%console:getc {
+	.Console/read DEI
+}
+
+%console:putc {
+	.Console/write DEO
+}
+
+|0100
+
+@on-reset
+	( Install our "bogus" console vector... )
+	;console:echo .Console/vector DEO2
+	( Directly start the monitor )
+	( monitor:start )
+	;line     puts
+	;hello    puts
+	;line     puts
+	;info-mon puts
+	( Put the first prompt up )
+	;echo-prompt puts
+	BRK
+
+( NOTE: this toy "echo" will break to monitor on *any line ending on #*! )
+@console:echo
+	console:getc
+
+	DUP           ( Keep a copy of the char )
+	console:putc  ( Print char )
+
+	( on newline )
+	DUP LIT NL NEQ ?{
+		( Check previous char )
+		LIT "#
+		LIT [ &previous $1 ]
+		NEQk ?{
+			#00 ,/previous STR ( Reset check )
+			monitor:start      ( start monitor )
+		}
+		EQU ?{
+			;echo-prompt puts
+		}
+	}
+	[ ,/previous STR ]         ( Save previous char )
+	BRK
+
+@line  "-------------------- NL 00
+@hello "Hello SP "world! NL 00
+@info-mon "Use SP "the SP "# SP "command SP "to SP "break SP "in SP "the SP "monitor. NL 00
+@echo-prompt "echo@ SP 00
+
+@puts ( str* -: )
+	LDAk #18 DEO
+	INC2 & LDAk ?puts
+	POP2
+	JMP2r
+
+|08000 ( TMP )
+~monitor.tal
