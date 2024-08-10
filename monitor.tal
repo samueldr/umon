@@ -34,7 +34,6 @@
 	STH2r DUP2 ;monitor:variables/PC STA2 ( Store the current PC, to jump back to it when done. )
 	LIT "@ monitor:putc
 	monitor:print-short
-	monitor:print-nl
 	( Save the console vector )
 	[ .Console/vector DEI2 ] ;monitor:variables/con-vec STA2
 	;monitor:on-console .Console/vector DEO2
