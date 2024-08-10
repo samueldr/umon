@@ -88,6 +88,7 @@
 	(      char       parser                   command                         )
 	DUP LIT "q NEQ ?{ ;monitor:parser:commands .monitor:Command/quit    !/done }
 	DUP LIT "% NEQ ?{ ;monitor:parser:commands .monitor:Command/debug   !/done }
+	DUP LIT "s NEQ ?{ ;monitor:parser:address  .monitor:Command/show    !/done }
 
 	( On unknown command )
 	[ LIT "? monitor:putc monitor:putc monitor:print-nl BRK ]
@@ -99,11 +100,54 @@
 	POP   ( Drop the current char )
 	BRK   ( Break out from vector handler )
 
+( Builds up the address argument until flush or `:` )
+@monitor:parser:address ( char -- )
+	DUP LIT ": EQU ?{ ( Except if there's no address to parse... )
+		( Reset the current address )
+		#0000 ;monitor:variables/current STA2
+	}
+	( Change parser to the actual parser )
+	[ ;monitor:parser:_address ;monitor:on-console/current-parser STA2 ]
+	( fall-through )
+@monitor:parser:_address ( char -- )
+	( Switch to value parser )
+	DUP LIT ": NEQ ?{
+		POP ;monitor:parser:value ;monitor:on-console/current-parser STA2 BRK
+	}
+	
+	( Otherwise parse as a hex nibble )
+	monitor:hex2nibble
+	( Not an hex nibble? skip over! )
+	DUP #10 LTH ?{ POP BRK }
+	( Update the current address )
+	;monitor:variables/current LDA2 ( nibl cur* )
+	[
+		#40 SFT2 ( cur << 4 )
+		ROT      ( nibl* cur_hi cur_lo -- cur_hi cur_lo nibl )
+		( This relies on the fact we have pushed the previous low nibble )
+		( to the left, setting the low nibble to zero. )
+		ADD      ( cur_lo + nibl )
+	]
+	;monitor:variables/current STA2
+	BRK
+
+@monitor:parser:value ( char -- )
+	( Reset the current value )
+	#0000 ;monitor:variables/value_s STA2
+	( Change parser to the actual parser )
+	[ ;monitor:parser:_value ;monitor:on-console/current-parser STA2 ]
+	( fall-through )
+@monitor:parser:_value ( char -- )
+	( XXX implement value parser [merge with address parser?] )
+	POP
+	BRK
+
 @monitor:command:flush
 	( Load the current the command )
 	;monitor:variables/cmd LDA
 	DUP .monitor:Command/quit      NEQ ?{ POP POP monitor:stop }
 	DUP .monitor:Command/debug     NEQ ?{ DEBUG }
+	DUP .monitor:Command/show      NEQ ?{ monitor:command:show }
 
 	( Drop the command loaded previously )
 	POP
@@ -112,6 +156,18 @@
 	;monitor:parser:commands ;monitor:on-console/current-parser STA2
 	( Sets back command to none )
 	.monitor:Command/none ;monitor:variables/cmd STA
+	JMP2r
+
+@monitor:command:show
+	( Load the current address on WST )
+	;monitor:variables/current LDA2
+
+	( Print format )
+	DUP2 monitor:print-short ( Print the current address )
+	LIT SP monitor:putc      ( Space )
+	LIT ": monitor:putc      ( : )
+	LDA monitor:print-byte   ( value )
+	LIT NL monitor:putc      ( Newline )
 	JMP2r
 
 ( Prints short from stack )
@@ -177,6 +233,7 @@
 	&none          $1
 	&quit          $1
 	( Monitoring commands )
+	&show          $1
 	&debug         $1
 
 ( Reset the output address )
