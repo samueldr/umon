@@ -144,7 +144,7 @@
 @monitor:command:flush
 	( Load the current the command )
 	;monitor:variables/cmd LDA
-	DUP .monitor:Command/quit      NEQ ?{ POP POP monitor:stop }
+	DUP .monitor:Command/quit      NEQ ?{ POP2r POP2 ;monitor:stop JMP2 }
 	DUP .monitor:Command/debug     NEQ ?{ DEBUG }
 	DUP .monitor:Command/show      NEQ ?{ monitor:command:show }
 
