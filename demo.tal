@@ -30,6 +30,7 @@
 @console:echo
 	console:getc
 
+	( echo chars )
 	DUP           ( Keep a copy of the char )
 	console:putc  ( Print char )
 
@@ -38,13 +39,30 @@
 		( Check previous char )
 		LIT "#
 		LIT [ &previous $1 ]
-		NEQk ?{
+		( When `#` ends the previous line, break into monitor )
+		NEQ ?{
 			#00 ,/previous STR ( Reset check )
+			[
+				( For visual inspection )
+				LIT2  abe0 ( Wabe0 )
+				LIT2r ace5 ( Race5 )
+			]
 			monitor:start      ( start monitor )
+			[
+				( For visual inspection )
+				LIT NL console:putc
+				( Check for balanced WST visually )
+				LIT "W console:putc
+				monitor:print-short
+				LIT NL console:putc
+				( Check for balanced RST visually )
+				LIT "R console:putc
+				STH2r monitor:print-short
+				LIT NL console:putc
+			]
+			LIT NL console:putc
 		}
-		EQU ?{
-			;echo-prompt puts
-		}
+		;echo-prompt puts
 	}
 	[ ,/previous STR ]         ( Save previous char )
 	BRK
