@@ -26,6 +26,8 @@
 	&con-vec  $2 ( previous console vector )
 	( Used by the monitor )
 	&current  $2 ( Current address )
+	&value_hi 00 ( Unused, but allows using a single short parser )
+	&value    00 ( Value for command )
 	( Used by the parser )
 	&cmd      00 ( Current command )
 	&parser_state 00 ( Bit field for the parser state )
@@ -130,13 +132,17 @@
 
 @monitor:parser:value ( char -- )
 	( Reset the current value )
-	#0000 ;monitor:variables/value_s STA2
-	( Change parser to the actual parser )
-	[ ;monitor:parser:_value ;monitor:on-console/current-parser STA2 ]
+	#0000 ;monitor:variables/value_hi STA2
+	( Configure the parser components )
+	[ ;monitor:parser:_value      ;monitor:on-console/current-parser STA2 ]
+	[ ;monitor:variables/value_hi ;monitor:parser:_nibble/target     STA2 ]
 	( fall-through )
 @monitor:parser:_value ( char -- )
-	( XXX implement value parser [merge with address parser?] )
-	POP
+	( The value has been modified )
+	.monitor:ParserState/value_set monitor:parser:_set-state
+
+	( Parse and save the nibble )
+	monitor:parser:_nibble
 	BRK
 
 @monitor:parser:_nibble ( char -- )
