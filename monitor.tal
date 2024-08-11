@@ -192,8 +192,8 @@
 
 	( Print format )
 	DUP2 monitor:print-short ( Print the current address )
-	LIT SP monitor:putc      ( Space )
 	LIT ": monitor:putc      ( : )
+	LIT SP monitor:putc      ( Space )
 	LDA monitor:print-byte   ( value )
 	LIT NL monitor:putc      ( Newline )
 	JMP2r
