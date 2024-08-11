@@ -93,6 +93,7 @@
 	DUP LIT "q NEQ ?{ ;monitor:parser:commands .monitor:Command/quit    !/done }
 	DUP LIT "% NEQ ?{ ;monitor:parser:commands .monitor:Command/debug   !/done }
 	DUP LIT "s NEQ ?{ ;monitor:parser:address  .monitor:Command/show    !/done }
+	DUP LIT "w NEQ ?{ ;monitor:parser:address  .monitor:Command/write   !/done }
 	DUP LIT "g NEQ ?{ ;monitor:parser:address  .monitor:Command/go      !/done }
 
 	( On unknown command )
@@ -176,6 +177,7 @@
 	DUP .monitor:Command/quit      NEQ ?{ POP2r POP2 ;monitor:stop JMP2 }
 	DUP .monitor:Command/debug     NEQ ?{ DEBUG }
 	DUP .monitor:Command/show      NEQ ?{ monitor:command:show }
+	DUP .monitor:Command/write     NEQ ?{ monitor:command:write }
 	DUP .monitor:Command/go        NEQ ?{ monitor:command:go }
 
 	( Drop the command loaded previously )
@@ -194,6 +196,15 @@
 	LIT ": monitor:putc      ( : )
 	LDA monitor:print-byte   ( value )
 	LIT NL monitor:putc      ( Newline )
+	JMP2r
+
+@monitor:command:write
+	( Load the to-be-written byte on WST )
+	[ ;monitor:variables/value LDA ]    ( -- value )
+	( Load the current address on WST )
+	[ ;monitor:variables/current LDA2 ] ( -- value addr* )
+	( Write it! )
+	STA
 	JMP2r
 
 @monitor:command:go
@@ -268,6 +279,7 @@
 	&quit          $1
 	( Monitoring commands )
 	&show          $1
+	&write         $1
 	&debug         $1
 	( Execution commands )
 	&go            $1
