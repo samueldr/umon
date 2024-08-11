@@ -22,38 +22,33 @@
 
 ( Scratch area reserved for runtime manipulations )
 @monitor:variables
-	&PC       $2 ( previous PC )
-	&con-vec  $2 ( previous console vector )
 	( Used by the monitor )
-	&current  $2 ( Current address )
-	&value_hi 00 ( Unused, but allows using a single short parser )
-	&value    00 ( Value for command )
+	&current    0000 ( Current address )
+	&value_hi     00 ( Unused, but allows using a single short parser )
+	&value        00 ( Value for command )
 	( Used by the parser )
-	&cmd      00 ( Current command )
+	&cmd          00 ( Current command )
 	&parser_state 00 ( Bit field for the parser state )
 
 ( Starts the monitor program, replacing the console vector. )
 @monitor:start
-	STH2r DUP2 ;monitor:variables/PC STA2 ( Store the current PC, to jump back to it when done. )
+	STH2r DUP2 ;monitor:stop/PC STA2 ( Store the current PC, to jump back to it when done. )
 	LIT "@ monitor:putc
 	monitor:print-short
 	( Save the console vector )
-	[ .Console/vector DEI2 ] ;monitor:variables/con-vec STA2
+	[ .Console/vector DEI2 ] ;monitor:stop/con-vec STA2
 	;monitor:on-console .Console/vector DEO2
 	monitor:reset-state
 	monitor:prompt
+	( Stop the current vector, whichever it is. )
 	BRK
 
 ( Stops the monitor program, putting back the console vector. )
 @monitor:stop
 	( Restore console vector )
-	;monitor:variables/con-vec LDA2
-	.Console/vector DEO2
-
-	( Fish back PC from when we started )
-	;monitor:variables/PC LDA2
-	STH2
-	JMP2r
+	[ LIT2 &con-vec 0000 ] .Console/vector DEO2
+	( Fish back PC from when we started, and jump back )
+	[ LIT2r &PC 0000 ] JMP2r
 
 @monitor:reset-state
 	( Sets back the parser to the commands parser )
