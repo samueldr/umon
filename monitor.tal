@@ -25,9 +25,10 @@
 	&PC       $2 ( previous PC )
 	&con-vec  $2 ( previous console vector )
 	( Used by the monitor )
-	&current  $2   ( Current address )
+	&current  $2 ( Current address )
 	( Used by the parser )
 	&cmd      00 ( Current command )
+	&parser_state 00 ( Bit field for the parser state )
 
 ( Starts the monitor program, replacing the console vector. )
 @monitor:start
@@ -37,11 +38,7 @@
 	( Save the console vector )
 	[ .Console/vector DEI2 ] ;monitor:variables/con-vec STA2
 	;monitor:on-console .Console/vector DEO2
-
-	( Reset state )
-	.monitor:Command/none    ;monitor:variables/cmd STA
-	;monitor:parser:commands ;monitor:on-console/current-parser STA2
-
+	monitor:reset-state
 	monitor:prompt
 	BRK
 
@@ -54,6 +51,15 @@
 	( Fish back PC from when we started )
 	;monitor:variables/PC LDA2
 	STH2
+	JMP2r
+
+@monitor:reset-state
+	( Sets back the parser to the commands parser )
+	;monitor:parser:commands ;monitor:on-console/current-parser STA2
+	( Sets back command to none )
+	.monitor:Command/none ;monitor:variables/cmd STA
+	( Sets back state to none )
+	#00 ;monitor:variables/parser_state STA
 	JMP2r
 
 ( Prints the prompt for the monitor )
@@ -105,29 +111,21 @@
 		( Reset the current address )
 		#0000 ;monitor:variables/current STA2
 	}
-	( Change parser to the actual parser )
-	[ ;monitor:parser:_address ;monitor:on-console/current-parser STA2 ]
+	( Configure the parser components )
+	[ ;monitor:parser:_address   ;monitor:on-console/current-parser STA2 ]
+	[ ;monitor:variables/current ;monitor:parser:_nibble/target     STA2 ]
 	( fall-through )
 @monitor:parser:_address ( char -- )
 	( Switch to value parser )
 	DUP LIT ": NEQ ?{
 		POP ;monitor:parser:value ;monitor:on-console/current-parser STA2 BRK
 	}
-	
-	( Otherwise parse as a hex nibble )
-	monitor:hex2nibble
-	( Not an hex nibble? skip over! )
-	DUP #10 LTH ?{ POP BRK }
-	( Update the current address )
-	;monitor:variables/current LDA2 ( nibl cur* )
-	[
-		#40 SFT2 ( cur << 4 )
-		ROT      ( nibl* cur_hi cur_lo -- cur_hi cur_lo nibl )
-		( This relies on the fact we have pushed the previous low nibble )
-		( to the left, setting the low nibble to zero. )
-		ADD      ( cur_lo + nibl )
-	]
-	;monitor:variables/current STA2
+
+	( The address has been modified )
+	.monitor:ParserState/address_set monitor:parser:_set-state
+
+	( Parse and save the nibble )
+	monitor:parser:_nibble
 	BRK
 
 @monitor:parser:value ( char -- )
@@ -141,6 +139,33 @@
 	POP
 	BRK
 
+@monitor:parser:_nibble ( char -- )
+	( Parse char as a hex nibble )
+	monitor:hex2nibble  ( char -- nibl )
+
+	( Not an hex nibble? consume and return! )
+	DUP #10 LTH ?{ POP JMP2r }
+
+	( Load the current target value )
+	[ LIT2 &target 0000 ] LDA2 ( nibl -- nibl cur* )
+	[
+		( This relies on the fact we have pushed the previous low nibble )
+		( to the left, setting the low nibble to zero. )
+		( cur << 4 )
+		#40 SFT2
+		ROT                    ( nibl cur_hi cur_lo -- cur_hi cur_lo nibl )
+		ADD                    ( -- cur_hi cur_lo+nibl )
+	]
+	[ ;/target LDA2 ]          ( cur -- cur &target )
+	STA2                       ( cur &target -- )
+	JMP2r
+
+@monitor:parser:_set-state ( bit_field -- )
+	;monitor:variables/parser_state LDA   ( -- bit_field curr )
+	ORA                                   ( -- new_value )
+	;monitor:variables/parser_state STA   ( -- )
+	JMP2r
+
 @monitor:command:flush
 	( Load the current the command )
 	;monitor:variables/cmd LDA
@@ -151,10 +176,7 @@
 	( Drop the command loaded previously )
 	POP
 
-	( Sets back the parser to the commands parser )
-	;monitor:parser:commands ;monitor:on-console/current-parser STA2
-	( Sets back command to none )
-	.monitor:Command/none ;monitor:variables/cmd STA
+	monitor:reset-state
 	JMP2r
 
 @monitor:command:show
@@ -234,6 +256,11 @@
 	( Monitoring commands )
 	&show          $1
 	&debug         $1
+
+|0000
+@monitor:ParserState
+	|01 &address_set  ( 0b0000_0001 )
+	|02 &value_set    ( 0b0000_0010 )
 
 ( Reset the output address )
 |monitor:_end
