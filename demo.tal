@@ -78,5 +78,13 @@
 	POP2
 	JMP2r
 
-|08000 ( TMP )
+|8000 ( TMP )
 ~monitor.tal
+
+|9000
+@bogus-routine
+	;/str puts
+	DEBUG
+	;/str puts
+	JMP2r
+	&str "Bogus SP "routine... NL BRK
