@@ -60,6 +60,8 @@
 	;monitor:parser:commands ;monitor:on-console/current-parser STA2
 	( Sets back command to none )
 	.monitor:Command/none ;monitor:variables/cmd STA
+	( Sets back value argument 0 )
+	#0000 ;monitor:variables/value_hi STA2
 	( Sets back state to none )
 	#00 ;monitor:variables/parser_state STA
 	JMP2r
