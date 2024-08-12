@@ -44,7 +44,7 @@
 			#00 ,/previous STR ( Reset check )
 			[
 				( For visual inspection )
-				LIT2  abe0 ( Wabe0 )
+				LIT2  f00f ( Wf00f )
 				LIT2r ace5 ( Race5 )
 			]
 			monitor:start      ( start monitor )
