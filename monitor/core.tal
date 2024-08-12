@@ -60,6 +60,16 @@
 	( ... the current address )
 	;monitor:variables/current LDA2
 	monitor:print-short
+	
+	( Print the value )
+	( Useful only when debugging the monitor... )
+	(
+	LIT "[ monitor:bios:putc
+	;monitor:variables/value LDA
+	monitor:print-byte
+	LIT "] monitor:bios:putc
+	)
+
 	( Then print the prompt )
 	;/ps1 puts
 	JMP2r
