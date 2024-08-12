@@ -28,15 +28,40 @@
 	JMP2r
 
 @monitor:command:show
+	( Load the end address on WST [promoted to short] )
+	#00 ;monitor:variables/value LDA ( -- length* )
+	;monitor:variables/current LDA2  ( length* -- length* current* )
+	ADD2 INC2                        ( length* current* -- end* )
 	( Load the current address on WST )
-	;monitor:variables/current LDA2
+	;monitor:variables/current LDA2  ( end* -- end working_address )
 
-	( Print format )
-	DUP2 monitor:print-short ( Print the current address )
-	LIT ": monitor:bios:putc      ( : )
-	LIT 20 monitor:bios:putc      ( Space )
-	LDA monitor:print-byte   ( value )
-	monitor:print-nl
+	( Line start )
+	&line
+	DUP2 monitor:print-short         ( Print the working address )
+	LIT ": monitor:bios:putc         ( : )
+
+	&value
+	LIT 20 monitor:bios:putc         ( Space )
+	DUP2 LDA monitor:print-byte      ( value )
+
+	( working_address++ )
+	INC2
+
+	( Unless we're done... )
+	EQU2k ?{
+		( Need to print a fresh line? )
+		[ DUP #10 monitor:modulo ] ?{
+			monitor:print-nl
+			!/line
+		}
+		( Continue printing values )
+		!/value
+	}
+
+	( We're done! )
+	POP2                 ( Drop the working address )
+	POP2                 ( Drop the end addres )
+	monitor:print-nl     ( Final newline )
 	JMP2r
 
 @monitor:command:write
