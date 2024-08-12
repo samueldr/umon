@@ -11,7 +11,7 @@
 @monitor:bios
 
 ( Call an appropriate platform-specific "debug" handler )
-%monitor:debug ( -- ) {
+%monitor:bios:debug ( -- ) {
 	( For Varvara )
 	#01
 	( .System/debug  ) #0e DEO

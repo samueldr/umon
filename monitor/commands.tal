@@ -11,7 +11,7 @@
 	( Load the current the command )
 	;monitor:variables/cmd LDA
 	DUP .monitor:Command/quit      NEQ ?{ POP2r POP2 ;monitor:stop JMP2 }
-	DUP .monitor:Command/debug     NEQ ?{ DEBUG }
+	DUP .monitor:Command/debug     NEQ ?{ monitor:bios:debug }
 	DUP .monitor:Command/show      NEQ ?{ monitor:command:show }
 	DUP .monitor:Command/write     NEQ ?{ monitor:command:write }
 	DUP .monitor:Command/go        NEQ ?{ monitor:command:go }
