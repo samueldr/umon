@@ -43,6 +43,8 @@
 @monitor:reset-state
 	( Sets back the parser to the commands parser )
 	;monitor:parser:commands ;monitor:on-console/current-parser STA2
+	( Sets back the fallback parser to the unknown parser )
+	;monitor:parser:_unknown ;monitor:parser:commands/fallback STA2
 	( Sets back command to none )
 	.monitor:Command/none ;monitor:variables/cmd STA
 	( Sets back value argument 0 )

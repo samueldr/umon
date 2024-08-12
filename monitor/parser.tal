@@ -19,7 +19,11 @@
 	DUP LIT "- NEQ ?{ ;monitor:parser:stack    .monitor:Command/pop     !/done }
 
 	( On unknown command )
-	monitor:parser:_unknown
+	LIT2
+	&fallback
+		( By default, use the _unknown parser... )
+		=monitor:parser:_unknown
+		JSR2
 	JMP2r
 
 	&done
