@@ -22,17 +22,22 @@
 
 ( Starts the monitor program, replacing the console vector. )
 @monitor:start
-	STH2r DUP2 ;monitor:stop/PC STA2 ( Store the current PC, to jump back to it when done. )
-	LIT "@ monitor:putc
-	monitor:print-short
+	( Store the current PC, to jump back to it when done. )
+	STH2r DUP2 ;monitor:stop/PC STA2
+	( Print the PC, which we still have a copy of on the stack )
+	LIT "@ monitor:puts monitor:print-short
+	( Reset everything to a sensible state )
 	monitor:reset-state
+	( Show the first prompt )
 	monitor:prompt
+	( End with the bios routine for hooking-up to the console. )
 	monitor:bios:hook_console
 
 ( Stops the monitor program, putting back the console vector. )
 @monitor:stop
+	( Start by un-hooking from the console. )
 	monitor:bios:unhook_console
-	( Fish back PC from when we started, and jump back )
+	( Then use the PC from when we started, and jump back. )
 	[ LIT2r &PC 0000 ] JMP2r
 
 @monitor:reset-state
@@ -48,28 +53,35 @@
 
 ( Prints the prompt for the monitor )
 @monitor:prompt
+	( Ensure we're on a free line; also spaces out calls )
 	monitor:print-nl
+	( A dollar sign for... )
 	LIT "$ monitor:putc
+	( ... the current address )
 	;monitor:variables/current LDA2
 	monitor:print-short
+	( Then print the prompt )
 	;/ps1 puts
 	JMP2r
 	&ps1 "> 20 00
 
 ( Handles monitor input )
 @monitor:on-console ( -- )
+	( Let the BIOS do whatever it needs to do )
 	monitor:bios:on-console-start
+
+	( Get the character )
 	monitor:getc
 
-	( Handling in-flight commands )
+	( Flush [complete] in-flight commands as needed )
 	DUP LIT 0a NEQ ?{ monitor:command:flush monitor:prompt POP !/done }
 	DUP LIT 20 NEQ ?{ monitor:command:flush                POP !/done }
 	
-	( Go to the current parser from LUT )
-	LIT2 &current-parser 0000
-	JSR2
+	( Otherwise continue to the currently configured parser )
+	[ LIT2 &current-parser 0000 ] JSR2
 
 	&done
+	( Let the BIOS do whatever it needs to do )
 	monitor:bios:on-console-end
 
 ~monitor/helpers.tal
@@ -78,12 +90,11 @@
 
 @monitor:core:end
 
-
 ( Keep tabs of where we are )
 @monitor:_end
 
 ( Import the enums )
 ~monitor/enums.tal
 
-( Reset the output address )
+( Reset the output address [also ensures enums write nothing] )
 |monitor:_end
