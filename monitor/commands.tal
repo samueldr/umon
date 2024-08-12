@@ -1,0 +1,52 @@
+( ---------------------------------------------- )
+( Monitor program - Monitor commands             )
+( ---------------------------------------------- )
+( NOTE: all labels and macros **HAVE** to start  )
+(       with `monitor:`.                         )
+( ---------------------------------------------- )
+( This file implements the commands.             )
+( ---------------------------------------------- )
+
+@monitor:command:flush
+	( Load the current the command )
+	;monitor:variables/cmd LDA
+	DUP .monitor:Command/quit      NEQ ?{ POP2r POP2 ;monitor:stop JMP2 }
+	DUP .monitor:Command/debug     NEQ ?{ DEBUG }
+	DUP .monitor:Command/show      NEQ ?{ monitor:command:show }
+	DUP .monitor:Command/write     NEQ ?{ monitor:command:write }
+	DUP .monitor:Command/go        NEQ ?{ monitor:command:go }
+
+	( Drop the command loaded previously )
+	POP
+
+	monitor:reset-state
+	JMP2r
+
+@monitor:command:show
+	( Load the current address on WST )
+	;monitor:variables/current LDA2
+
+	( Print format )
+	DUP2 monitor:print-short ( Print the current address )
+	LIT ": monitor:putc      ( : )
+	LIT 20 monitor:putc      ( Space )
+	LDA monitor:print-byte   ( value )
+	LIT 0a monitor:putc      ( Newline )
+	JMP2r
+
+@monitor:command:write
+	( Load the to-be-written byte on WST )
+	[ ;monitor:variables/value LDA ]    ( -- value )
+	( Load the current address on WST )
+	[ ;monitor:variables/current LDA2 ] ( -- value addr* )
+	( Write it! )
+	STA
+	JMP2r
+
+@monitor:command:go
+	( Load the current address on WST )
+	;monitor:variables/current LDA2
+	( Go, hoping we get back here... )
+	( JSR2 JMP2r )
+	( Save one instruction by assuming the routine will JMP2r anyway. )
+	JMP2
