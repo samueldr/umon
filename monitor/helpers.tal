@@ -11,5 +11,5 @@
 
 ( Prints a newline )
 @monitor:print-nl
-	LIT 0a monitor:putc
+	LIT 0a monitor:bios:putc
 	JMP2r

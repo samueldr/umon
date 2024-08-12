@@ -25,7 +25,7 @@
 	( Store the current PC, to jump back to it when done. )
 	STH2r DUP2 ;monitor:stop/PC STA2
 	( Print the PC, which we still have a copy of on the stack )
-	LIT "@ monitor:putc monitor:print-short
+	LIT "@ monitor:bios:putc monitor:print-short
 	( Reset everything to a sensible state )
 	monitor:reset-state
 	( Show the first prompt )
@@ -56,7 +56,7 @@
 	( Ensure we're on a free line; also spaces out calls )
 	monitor:print-nl
 	( A dollar sign for... )
-	LIT "$ monitor:putc
+	LIT "$ monitor:bios:putc
 	( ... the current address )
 	;monitor:variables/current LDA2
 	monitor:print-short
@@ -71,7 +71,7 @@
 	monitor:bios:on-console-start
 
 	( Get the character )
-	monitor:getc
+	monitor:bios:getc
 
 	( Flush [complete] in-flight commands as needed )
 	DUP LIT 0a NEQ ?{ monitor:command:flush monitor:prompt POP !/done }

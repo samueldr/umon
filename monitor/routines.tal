@@ -47,7 +47,7 @@
 
 ( Ouput a NULL-terminated string to the console )
 @monitor:puts ( str* -- )
-	LDAk monitor:putc
+	LDAk monitor:bios:putc
 	INC2 LDAk ?puts
 	POP2
 	JMP2r
@@ -55,11 +55,12 @@
 ( Prints short from stack )
 @monitor:print-short ( short* -: )
 	SWP
-	monitor:byte2hex monitor:putc monitor:putc
+	monitor:byte2hex monitor:bios:putc monitor:bios:putc
+	( fall-through )
 
 ( Prints byte from stack )
 @monitor:print-byte  ( byte -: )
-	monitor:byte2hex monitor:putc monitor:putc
+	monitor:byte2hex monitor:bios:putc monitor:bios:putc
 	JMP2r
 
 @monitor:routines:end

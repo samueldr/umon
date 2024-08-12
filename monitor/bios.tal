@@ -18,12 +18,12 @@
 }
 
 ( Read a single char from the console )
-%monitor:getc ( -- char ) {
+%monitor:bios:getc ( -- char ) {
 	( .Console/read  ) #12 DEI
 }
 
 ( Write a single char from the console )
-%monitor:putc ( char -- ) {
+%monitor:bios:putc ( char -- ) {
 	( .Console/write ) #18 DEO
 }
 

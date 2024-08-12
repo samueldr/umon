@@ -28,10 +28,10 @@
 
 	( Print format )
 	DUP2 monitor:print-short ( Print the current address )
-	LIT ": monitor:putc      ( : )
-	LIT 20 monitor:putc      ( Space )
+	LIT ": monitor:bios:putc      ( : )
+	LIT 20 monitor:bios:putc      ( Space )
 	LDA monitor:print-byte   ( value )
-	LIT 0a monitor:putc      ( Newline )
+	LIT 0a monitor:bios:putc      ( Newline )
 	JMP2r
 
 @monitor:command:write

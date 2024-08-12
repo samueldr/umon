@@ -17,7 +17,7 @@
 	DUP LIT "g NEQ ?{ ;monitor:parser:address  .monitor:Command/go      !/done }
 
 	( On unknown command )
-	[ LIT "? monitor:putc monitor:putc monitor:print-nl JMP2r ]
+	[ LIT "? monitor:bios:putc monitor:bios:putc monitor:print-nl JMP2r ]
 
 	&done
 	( From the previous "table", store the new monitor state )
