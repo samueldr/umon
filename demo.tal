@@ -84,7 +84,7 @@
 |9000
 @bogus-routine
 	;/str puts
-	DEBUG
+	varvara:debug
 	;/str puts
 	JMP2r
 	&str "Bogus SP "routine... NL BRK
