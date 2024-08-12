@@ -78,13 +78,14 @@
 	POP2
 	JMP2r
 
-|8000 ( TMP )
-~monitor.tal
-
-|9000
-@bogus-routine
+( A bogus routine at a well-known address to `g`o to. )
+|2000
+@bogus-routine-2000
 	;/str puts
 	varvara:debug
 	;/str puts
 	JMP2r
 	&str "Bogus SP "routine... NL BRK
+
+|3000
+~monitor.tal
