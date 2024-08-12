@@ -55,7 +55,7 @@
 ( Prints short from stack )
 @monitor:print-short ( short* -: )
 	SWP
-	monitor:byte2hex monitor:bios:putc monitor:bios:putc
+	monitor:print-byte
 	( fall-through )
 
 ( Prints byte from stack )
