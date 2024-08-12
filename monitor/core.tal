@@ -1,0 +1,217 @@
+( ---------------------------------------------- )
+( Monitor program - Core monitor implementation  )
+( ---------------------------------------------- )
+( NOTE: all labels and macros **HAVE** to start  )
+(       with `monitor:`.                         )
+( ---------------------------------------------- )
+( This file implements the monitor.              )
+( ---------------------------------------------- )
+
+( start of the memory area for the monitor proper )
+@monitor:core
+
+( Scratch area reserved for runtime manipulations )
+@monitor:variables
+	( Used by the monitor )
+	&current    0000 ( Current address )
+	&value_hi     00 ( Unused, but allows using a single short parser )
+	&value        00 ( Value for command )
+	( Used by the parser )
+	&cmd          00 ( Current command )
+	&parser_state 00 ( Bit field for the parser state )
+
+( Starts the monitor program, replacing the console vector. )
+@monitor:start
+	STH2r DUP2 ;monitor:stop/PC STA2 ( Store the current PC, to jump back to it when done. )
+	LIT "@ monitor:putc
+	monitor:print-short
+	monitor:bios:hook_console
+	monitor:reset-state
+	monitor:prompt
+	( Stop the current vector, whichever it is. )
+	BRK
+
+( Stops the monitor program, putting back the console vector. )
+@monitor:stop
+	monitor:bios:unhook_console
+	( Fish back PC from when we started, and jump back )
+	[ LIT2r &PC 0000 ] JMP2r
+
+@monitor:reset-state
+	( Sets back the parser to the commands parser )
+	;monitor:parser:commands ;monitor:on-console/current-parser STA2
+	( Sets back command to none )
+	.monitor:Command/none ;monitor:variables/cmd STA
+	( Sets back value argument 0 )
+	#0000 ;monitor:variables/value_hi STA2
+	( Sets back state to none )
+	#00 ;monitor:variables/parser_state STA
+	JMP2r
+
+( Prints the prompt for the monitor )
+@monitor:prompt
+	monitor:print-nl
+	LIT "$ monitor:putc
+	;monitor:variables/current LDA2
+	monitor:print-short
+	;/ps1 puts
+	JMP2r
+	&ps1 "> 20 00
+
+( Handles monitor input )
+@monitor:on-console ( -- )
+	monitor:getc
+
+	( Handling in-flight commands )
+	DUP LIT 0a NEQ ?{ monitor:command:flush monitor:prompt !/done }
+	DUP LIT 20 NEQ ?{ monitor:command:flush                !/done }
+	
+	( Go to the current parser from LUT )
+	LIT2 &current-parser 0000
+		JMP2 ( NOTE: parsers should BRK as needed )
+
+	&done
+	POP ( Drop current char )
+	BRK (  )
+
+( Parse the commands )
+@monitor:parser:commands ( char -- )
+	(      char       parser                   command                         )
+	DUP LIT "q NEQ ?{ ;monitor:parser:commands .monitor:Command/quit    !/done }
+	DUP LIT "% NEQ ?{ ;monitor:parser:commands .monitor:Command/debug   !/done }
+	DUP LIT "s NEQ ?{ ;monitor:parser:address  .monitor:Command/show    !/done }
+	DUP LIT "w NEQ ?{ ;monitor:parser:address  .monitor:Command/write   !/done }
+	DUP LIT "g NEQ ?{ ;monitor:parser:address  .monitor:Command/go      !/done }
+
+	( On unknown command )
+	[ LIT "? monitor:putc monitor:putc monitor:print-nl BRK ]
+
+	&done
+	( From the previous "table", store the new monitor state )
+	;monitor:variables/cmd STA               ( Set the current command )
+	;monitor:on-console/current-parser STA2  ( Set the current parser )
+	POP   ( Drop the current char )
+	BRK   ( Break out from vector handler )
+
+( Builds up the address argument until flush or `:` )
+@monitor:parser:address ( char -- )
+	DUP LIT ": EQU ?{ ( Except if there's no address to parse... )
+		( Reset the current address )
+		#0000 ;monitor:variables/current STA2
+	}
+	( Configure the parser components )
+	[ ;monitor:parser:_address   ;monitor:on-console/current-parser STA2 ]
+	[ ;monitor:variables/current ;monitor:parser:_nibble/target     STA2 ]
+	( fall-through )
+@monitor:parser:_address ( char -- )
+	( Switch to value parser )
+	DUP LIT ": NEQ ?{
+		POP ;monitor:parser:value ;monitor:on-console/current-parser STA2 BRK
+	}
+
+	( The address has been modified )
+	.monitor:ParserState/address_set monitor:parser:_set-state
+
+	( Parse and save the nibble )
+	monitor:parser:_nibble
+	BRK
+
+@monitor:parser:value ( char -- )
+	( Reset the current value )
+	#0000 ;monitor:variables/value_hi STA2
+	( Configure the parser components )
+	[ ;monitor:parser:_value      ;monitor:on-console/current-parser STA2 ]
+	[ ;monitor:variables/value_hi ;monitor:parser:_nibble/target     STA2 ]
+	( fall-through )
+@monitor:parser:_value ( char -- )
+	( The value has been modified )
+	.monitor:ParserState/value_set monitor:parser:_set-state
+
+	( Parse and save the nibble )
+	monitor:parser:_nibble
+	BRK
+
+@monitor:parser:_nibble ( char -- )
+	( Parse char as a hex nibble )
+	monitor:hex2nibble  ( char -- nibl )
+
+	( Not an hex nibble? consume and return! )
+	DUP #10 LTH ?{ POP JMP2r }
+
+	( Load the current target value )
+	[ LIT2 &target 0000 ] LDA2 ( nibl -- nibl cur* )
+	[
+		( This relies on the fact we have pushed the previous low nibble )
+		( to the left, setting the low nibble to zero. )
+		( cur << 4 )
+		#40 SFT2
+		ROT                    ( nibl cur_hi cur_lo -- cur_hi cur_lo nibl )
+		ADD                    ( -- cur_hi cur_lo+nibl )
+	]
+	[ ;/target LDA2 ]          ( cur -- cur &target )
+	STA2                       ( cur &target -- )
+	JMP2r
+
+@monitor:parser:_set-state ( bit_field -- )
+	;monitor:variables/parser_state LDA   ( -- bit_field curr )
+	ORA                                   ( -- new_value )
+	;monitor:variables/parser_state STA   ( -- )
+	JMP2r
+
+@monitor:command:flush
+	( Load the current the command )
+	;monitor:variables/cmd LDA
+	DUP .monitor:Command/quit      NEQ ?{ POP2r POP2 ;monitor:stop JMP2 }
+	DUP .monitor:Command/debug     NEQ ?{ DEBUG }
+	DUP .monitor:Command/show      NEQ ?{ monitor:command:show }
+	DUP .monitor:Command/write     NEQ ?{ monitor:command:write }
+	DUP .monitor:Command/go        NEQ ?{ monitor:command:go }
+
+	( Drop the command loaded previously )
+	POP
+
+	monitor:reset-state
+	JMP2r
+
+@monitor:command:show
+	( Load the current address on WST )
+	;monitor:variables/current LDA2
+
+	( Print format )
+	DUP2 monitor:print-short ( Print the current address )
+	LIT ": monitor:putc      ( : )
+	LIT SP monitor:putc      ( Space )
+	LDA monitor:print-byte   ( value )
+	LIT NL monitor:putc      ( Newline )
+	JMP2r
+
+@monitor:command:write
+	( Load the to-be-written byte on WST )
+	[ ;monitor:variables/value LDA ]    ( -- value )
+	( Load the current address on WST )
+	[ ;monitor:variables/current LDA2 ] ( -- value addr* )
+	( Write it! )
+	STA
+	JMP2r
+
+@monitor:command:go
+	( Load the current address on WST )
+	;monitor:variables/current LDA2
+	( Go, hoping we get back here... )
+	( JSR2 JMP2r )
+	( Save one instruction by assuming the routine will JMP2r anyway. )
+	JMP2
+
+~monitor/helpers.tal
+
+@monitor:core:end
+
+
+( Keep tabs of where we are )
+@monitor:_end
+
+( Import the enums )
+~monitor/enums.tal
+
+( Reset the output address )
+|monitor:_end

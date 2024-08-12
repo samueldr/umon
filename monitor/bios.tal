@@ -1,0 +1,42 @@
+( ---------------------------------------------- )
+( Monitor program - Built-in BIOS for Varvara    )
+( ---------------------------------------------- )
+( NOTE: all labels and macros **HAVE** to start  )
+(       with `monitor:`.                         )
+( ---------------------------------------------- )
+( Routines that are platform-specific.           )
+( Anything *Varvara* should be defined here.     )
+( ---------------------------------------------- )
+
+@monitor:bios
+
+( Call an appropriate platform-specific "debug" handler )
+%monitor:debug ( -- ) {
+	( For Varvara )
+	#01
+	( .System/debug  ) #0e DEO
+}
+
+( Read a single char from the console )
+%monitor:getc ( -- char ) {
+	( .Console/read  ) #12 DEI
+}
+
+( Write a single char from the console )
+%monitor:putc ( char -- ) {
+	( .Console/write ) #18 DEO
+}
+
+( Setup the platform-specific monitor parts )
+%monitor:bios:hook_console {
+	( Save the current console vector )
+	[ .Console/vector DEI2 ] ;monitor:stop/con-vec STA2
+	;monitor:on-console .Console/vector DEO2
+}
+
+%monitor:bios:unhook_console {
+	( Restore console vector )
+	[ LIT2 &con-vec 0000 ] .Console/vector DEO2
+}
+
+@monitor:bios:_end

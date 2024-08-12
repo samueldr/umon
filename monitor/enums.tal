@@ -1,0 +1,26 @@
+( ---------------------------------------------- )
+( Monitor program - Enum definitions             )
+( ---------------------------------------------- )
+( NOTE: all labels and macros **HAVE** to start  )
+(       with `monitor:`.                         )
+( ---------------------------------------------- )
+
+( Enums for the monitor )
+|0000
+@monitor:Command
+	&none          $1
+	&quit          $1
+	( Monitoring commands )
+	&show          $1
+	&write         $1
+	&debug         $1
+	( Execution commands )
+	&go            $1
+	( Stack operations )
+	&push          $1
+	&pop           $1
+
+|0000
+@monitor:ParserState
+	|01 &address_set  ( 0b0000_0001 )
+	|02 &value_set    ( 0b0000_0010 )

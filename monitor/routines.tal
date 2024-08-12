@@ -1,0 +1,65 @@
+( ---------------------------------------------- )
+( Monitor program - Built-in common routines     )
+( ---------------------------------------------- )
+( NOTE: all labels and macros **HAVE** to start  )
+(       with `monitor:`.                         )
+( ---------------------------------------------- )
+
+@monitor:routines
+
+( Bits manipulation )
+%monitor:nibble:high { #04 SFT }
+%monitor:nibble:low  { #0f AND }
+
+( Converts a given byte to the nibble chars, big-end on top. )
+( [ big-end on top to allow directly sending stack to putc byte-per-byte ] )
+@monitor:byte2hex ( value -: charLO charHI )
+	DUP           ( Keep a copy of the value )
+	monitor:nibble2hex    ( Convert low to char )
+	SWP           ( Save result / restoring copied value )
+	monitor:nibble:high   ( Keep the high nibble )
+	monitor:nibble2hex    ( Convert high to char )
+	JMP2r
+
+( Converts the low nibble to its char )
+@monitor:nibble2hex ( nibble -: char )
+	monitor:nibble:low        ( Clamp to [0-f] range )
+	[ DUP #09 GTH ]   ( should we output a letter? )
+	[ #27 MUL ] ADD   ( add offset between ASCII letters and numbers as needed  )
+	[ LIT "0  ] ADD   ( add offset of ASCII char '0' )
+	JMP2r
+
+( Converts the hex chars to the value )
+@monitor:hex2value ( str* -: val* )
+	[ LIT2r 0000 ]
+	&w ( str* `acc* -: val* )
+	LDAk monitor:hex2nibble INC #00 EQU ?{
+		[ LITr 40 ] SFT2r LDAk monitor:hex2nibble [ LITr 00 ] STH
+		ADD2r INC2 LDAk ?&w }
+	POP2 STH2r
+	JMP2r
+
+( Converts the hex char [0-f] to the value )
+@monitor:hex2nibble ( c -: val! )
+	( dec ) [ LIT "0 ] SUB DUP #09 GTH ?{ JMP2r }
+	( hex ) #27 SUB DUP #0f GTH ?{ JMP2r }
+	( err ) POP #ff JMP2r
+
+( Ouput a NULL-terminated string to the console )
+@monitor:puts ( str* -- )
+	LDAk monitor:putc
+	INC2 LDAk ?puts
+	POP2
+	JMP2r
+
+( Prints short from stack )
+@monitor:print-short ( short* -: )
+	SWP
+	monitor:byte2hex monitor:putc monitor:putc
+
+( Prints byte from stack )
+@monitor:print-byte  ( byte -: )
+	monitor:byte2hex monitor:putc monitor:putc
+	JMP2r
+
+@monitor:routines:end

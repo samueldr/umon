@@ -1,0 +1,15 @@
+( ---------------------------------------------- )
+( Monitor program - Helper routines              )
+( ---------------------------------------------- )
+( NOTE: all labels and macros **HAVE** to start  )
+(       with `monitor:`.                         )
+( ---------------------------------------------- )
+( These are routines building up on BIOS calls   )
+( and generic uxn concepts.                      )
+( These will be included in the core!!           ) 
+( ---------------------------------------------- )
+
+( Prints a newline )
+@monitor:print-nl
+	LIT 0a monitor:putc
+	JMP2r
