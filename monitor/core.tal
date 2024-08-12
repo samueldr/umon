@@ -25,11 +25,9 @@
 	STH2r DUP2 ;monitor:stop/PC STA2 ( Store the current PC, to jump back to it when done. )
 	LIT "@ monitor:putc
 	monitor:print-short
-	monitor:bios:hook_console
 	monitor:reset-state
 	monitor:prompt
-	( Stop the current vector, whichever it is. )
-	BRK
+	monitor:bios:hook_console
 
 ( Stops the monitor program, putting back the console vector. )
 @monitor:stop
@@ -60,19 +58,19 @@
 
 ( Handles monitor input )
 @monitor:on-console ( -- )
+	monitor:bios:on-console-start
 	monitor:getc
 
 	( Handling in-flight commands )
-	DUP LIT 0a NEQ ?{ monitor:command:flush monitor:prompt !/done }
-	DUP LIT 20 NEQ ?{ monitor:command:flush                !/done }
+	DUP LIT 0a NEQ ?{ monitor:command:flush monitor:prompt POP !/done }
+	DUP LIT 20 NEQ ?{ monitor:command:flush                POP !/done }
 	
 	( Go to the current parser from LUT )
 	LIT2 &current-parser 0000
-		JMP2 ( NOTE: parsers should BRK as needed )
+	JSR2
 
 	&done
-	POP ( Drop current char )
-	BRK (  )
+	monitor:bios:on-console-end
 
 ~monitor/helpers.tal
 ~monitor/commands.tal

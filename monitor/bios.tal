@@ -32,11 +32,22 @@
 	( Save the current console vector )
 	[ .Console/vector DEI2 ] ;monitor:stop/con-vec STA2
 	;monitor:on-console .Console/vector DEO2
+	( Stop the current vector, whichever it is. )
+	BRK
 }
 
 %monitor:bios:unhook_console {
 	( Restore console vector )
 	[ LIT2 &con-vec 0000 ] .Console/vector DEO2
+}
+
+%monitor:bios:on-console-start {
+	( no-op )
+}
+
+%monitor:bios:on-console-end {
+	( Stop the console read vector )
+	BRK
 }
 
 @monitor:bios:_end
