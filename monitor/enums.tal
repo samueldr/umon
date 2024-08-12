@@ -24,3 +24,5 @@
 @monitor:ParserState
 	|01 &address_set  ( 0b0000_0001 )
 	|02 &value_set    ( 0b0000_0010 )
+	|04 &stack_wst    ( 0b0000_0100 )
+	|08 &stack_rst    ( 0b0000_1000 )

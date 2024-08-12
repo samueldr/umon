@@ -7,7 +7,7 @@
 ( This file implements the commands.             )
 ( ---------------------------------------------- )
 
-@monitor:command:flush
+@monitor:command:flush ( cmd -- )
 	( Load the current the command )
 	;monitor:variables/cmd LDA
 	DUP .monitor:Command/quit      NEQ ?{ POP2r POP2 ;monitor:stop JMP2 }
@@ -15,9 +15,14 @@
 	DUP .monitor:Command/show      NEQ ?{ monitor:command:show }
 	DUP .monitor:Command/write     NEQ ?{ monitor:command:write }
 	DUP .monitor:Command/go        NEQ ?{ monitor:command:go }
+	DUP .monitor:Command/pop       NEQ ?{ POP !monitor:command:pop }
+	DUP .monitor:Command/push      NEQ ?{ POP !monitor:command:push }
 
 	( Drop the command loaded previously )
 	POP
+
+	( Skip to here when manipulating stack )
+	&stack-done
 
 	monitor:reset-state
 	JMP2r
@@ -41,6 +46,35 @@
 	[ ;monitor:variables/current LDA2 ] ( -- value addr* )
 	( Write it! )
 	STA
+	JMP2r
+
+@monitor:command:pop ( [byte] char -- char ) ( OR ) ( [`byte] `ret* -- `ret* )
+	monitor:command:on_rst? ?{
+		ROTr
+		POPr
+		!monitor:command:flush/stack-done
+	}
+	( else ) [
+		SWP ( [byte] char -- char [byte] )
+		POP ( char [byte] -- char )
+		!monitor:command:flush/stack-done
+	]
+
+@monitor:command:push ( char -- [byte] char ) ( OR ) ( `ret* -- [`byte] `ret* )
+	[ ;monitor:variables/value LDA ] ( char value -- )
+	monitor:command:on_rst? ?{
+		STH     ( value `ret* -- `ret* `value )
+		ROTr ROTr ( `ret* `value -- `value `ret* )
+		!monitor:command:flush/stack-done
+	}
+	( else ) [
+		SWP ( char value -- value char )
+		!monitor:command:flush/stack-done
+	]
+
+@monitor:command:on_rst? ( -- RST? )
+	;monitor:variables/parser_state LDA
+	.monitor:ParserState/stack_wst  AND
 	JMP2r
 
 @monitor:command:go
