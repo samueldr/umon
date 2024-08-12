@@ -31,7 +31,7 @@
 	LIT ": monitor:bios:putc      ( : )
 	LIT 20 monitor:bios:putc      ( Space )
 	LDA monitor:print-byte   ( value )
-	LIT 0a monitor:bios:putc      ( Newline )
+	monitor:print-nl
 	JMP2r
 
 @monitor:command:write
