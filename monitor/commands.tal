@@ -78,6 +78,10 @@
 	JMP2r
 
 @monitor:command:write
+	.monitor:ParserState/value_set monitor:parser:_get-state ?{
+		( Unless the value has been set, skip the write )
+		JMP2r
+	}
 	( Load the to-be-written byte on WST )
 	[ ;monitor:variables/value LDA ]    ( -- value )
 	( Load the current address on WST )

@@ -131,3 +131,8 @@
 	ORA                                   ( -- new_value )
 	;monitor:variables/parser_state STA   ( -- )
 	JMP2r
+
+@monitor:parser:_get-state ( bits -- result )
+	;monitor:variables/parser_state LDA
+	AND 
+	JMP2r
