@@ -24,6 +24,8 @@
 	( Check if we need to print the prompt again )
 	SWP
 	[ DUP LIT 0a NEQ ] ?{
+		( Reset write offset )
+		[ #0000 ;monitor:command:write/offset STA2 ]
 		monitor:prompt
 	}
 	SWP
@@ -85,9 +87,13 @@
 	( Load the to-be-written byte on WST )
 	[ ;monitor:variables/value LDA ]    ( -- value )
 	( Load the current address on WST )
-	[ ;monitor:variables/current LDA2 ] ( -- value addr* )
+	[ ;monitor:variables/current LDA2 ] ( -- value current* )
+	( Offset for sequences of writes )
+	[ LIT2 &offset 0000 ADD2 ]          ( -- value addr* )
 	( Write it! )
 	STA
+	( Increase offset )
+	[ ;monitor:command:write/offset LDA2k INC2 SWP2 STA2 ]
 	JMP2r
 
 @monitor:command:pop ( [byte] char -- char ) ( OR ) ( [`byte] `ret* -- `ret* )
