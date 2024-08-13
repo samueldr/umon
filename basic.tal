@@ -1,0 +1,1320 @@
+( Tiny BASIC )
+
+(
+Based on:
+- https://git.sr.ht/~rabbits/tiny-basic
+
+Copyright © 2020 Devine Lu Linvega
+
+Permission to use, copy, modify, and distribute this software for any
+purpose with or without fee is hereby granted, provided that the above
+copyright notice and this permission notice appear in all copies.
+
+THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+)
+
+|00 @System &vector $2 &pad $6 &r $2 &g $2 &b $2
+|10 @Console &vector $2 &read $1 &pad $5 &write $1
+|20 @Screen &vector $2 &width $2 &height $2 &auto $1 &pad $1 &x $2 &y $2 &addr $2 &pixel $1 &sprite $1
+|80 @Controller &vector $2 &button $1 &key $1
+|90 @Mouse &vector $2 &x $2 &y $2 &state $1 &chord $1
+|a0 @File &vector $2 &success $2 &stat $2 &delete $1 &append $1 &name $2 &length $2 &read $2 &write $2
+|c0 @DateTime   &year   $2 &month    $1 &day    $1 &hour   $1 &minute $1 &second  $1 &dotw    $1 &doty   $2 &isdst $1
+
+|0000
+
+	( linefil ) $5 @input $40
+	@cursor &x $2 &y $2
+	@variables $34 ( 26 * 2 )
+	@interrupt $2 ( ptr to resume )
+	@queue-ptr $1 @queue-mem $10
+	@stack-ptr $1 @stack-mem $20
+	@pen-ptr $1 @pen-mem $10
+	@buf $20 ( temp buffer )
+
+|0100
+
+(
+@|vectors )
+
+@on-reset ( -> )
+
+	( meta )
+	;meta #06 DEO2
+	( theme )
+	#c00f .System/r DEO2
+	#c0ff .System/g DEO2
+	#c09f .System/b DEO2
+	;load-theme JSR2
+	( thinkpad size )
+	#02a8 .Screen/width DEO2
+	#0180 .Screen/height DEO2
+	;prng-init JSR2
+	( draw )
+	;redraw-all JSR2
+	( welcome message )
+	;draw-welcome JSR2
+	( unlock )
+	;on-console .Console/vector DEO2
+	;on-control .Controller/vector DEO2
+	;on-mouse .Mouse/vector DEO2
+
+BRK
+
+@meta
+	( version ) 00
+	( name ) "TinyBASIC 0a
+	( details ) "A 20 "BASIC 20 "interpreter 0a
+	( author ) "By 20 "Devine 20 "Lu 20 "Linvega 0a
+	( date ) "Jan 20 "8, 20 "2023 0000
+
+@on-console ( -> )
+
+	.Console/read DEI .buf OVR #21 LTH ,&eval JCN
+		#00 SWP ;sput JSR2 BRK
+	&eval ( c buf -- )
+		NIP #00 SWP ;do-load JSR2
+
+BRK
+
+( TODO:copy/paste )
+( TODO:repeat last command )
+
+@on-control ( -> )
+
+	( interrupt )
+	.queue-ptr LDZ #00 NEQ
+	.Controller/button DEI #fb AND #00 NEQ AND
+		,&on-interrupt JCN
+	.Controller/key DEI ;listen JSR2
+
+BRK
+
+&on-interrupt ( -> )
+
+	.Controller/button DEI #08 AND ,&on-cancel JCN
+	#00 .Controller/button DEI ;capture/dec JSR2
+
+BRK
+
+&on-cancel ( -> )
+
+	#00 .queue-ptr STZ ;draw-ready JSR2
+
+BRK
+
+@on-mouse ( -> )
+
+	( clear last cursor )
+	#40 ;draw-pointer JSR2
+	( draw new cursor )
+	.Mouse/x DEI2 .cursor/x STZ2
+	.Mouse/y DEI2 .cursor/y STZ2
+	;spritesheet/hand ;spritesheet/pointer
+		.queue-ptr LDZ [ #01 JCN SWP2 POP2 ] .Screen/addr DEO2
+	#4341 .Mouse/state DEI [ #01 JCN SWP POP ] ;draw-pointer JSR2
+	( interrupt )
+	.queue-ptr LDZ #02 EQU
+	.Mouse/state DEI #00 NEQ AND
+		,&on-interrupt JCN
+
+BRK
+
+&on-interrupt ( -- )
+
+	.Mouse/y DEI2 ;capture/dec JSR2
+	.Mouse/x DEI2 ;capture/dec JSR2
+
+BRK
+
+(
+@|core )
+
+@parse ( str* -- )
+
+	LDAk #20 LTH ,&empty JCN
+	.queue-ptr LDZ ,capture JCN
+	LDAk ;cidc JSR2 ,store JCN
+	;input ;run-str JSR2
+	&empty
+	POP2
+
+JMP2r
+
+@capture ( str* -- )
+
+	;walk-expr JSR2 NIP2
+	&dec ( val* -- )
+	;queue/pop JSR2 ;set-var JSR2
+	.queue-ptr LDZ ,&continue JCN
+		.interrupt LDZ2 ;do-run/w JSR2
+		&continue
+
+JMP2r
+
+@store ( str* -- )
+
+	( compile )
+	;walk-number JSR2 ;&id STA2
+	;walk-statement JSR2 ;&statement STA
+	;walk-blank JSR2
+		DUP2 ;&body STA2
+		;slen JSR2 #0006 ADD2 ;&addr LDA2 ADD2 ;&link STA2
+	( replace )
+	,&id LDR2 ;find-line-replace JSR2
+		DUP2 #ffff EQU2 ,&no-replace JCN
+		( this->to ) LDA2k LDA2 ,&link STR2
+		( from->this ) ,&addr LDR2 OVR2 STA2
+		&no-replace
+		POP2
+	( insertion )
+	,&id LDR2 ;find-line-insert JSR2
+		DUP2 #ffff EQU2 ,&no-insert JCN
+		( this->to ) LDA2k ,&link STR2
+		( from->this ) ,&addr LDR2 OVR2 STA2
+		&no-insert
+		POP2
+	( append )
+	[ LIT2r &addr =mem/prg ]
+	[ LIT2 &link $2 ] STH2kr STA2 INC2r INC2r
+	[ LIT2 &id $2 ] STH2kr STA2 INC2r INC2r
+	[ LIT &statement $1 ] STH2kr STA INC2r
+	[ LIT2 &body $2 ] STH2kr ;scpy JSR2
+	STH2r ;scap JSR2 INC2 ,&addr STR2
+
+JMP2r
+
+@run-str ( str* -- str* )
+
+	( on interrupt )
+	;walk-statement JSR2 DUP ,&valid JCN
+		POP ;err/command ;draw-error JMP2
+		&valid
+	,exec JMP
+
+@run-line ( line* -- line* )
+
+	LDA2k SWP2
+	DUP2 #0005 ADD2
+	SWP2 #0004 ADD2 LDA
+
+@exec ( str* opcode -- str* )
+
+	#00 SWP DUP ADD ;statements-tbl ADD2 LDA2 ( .. )
+
+JMP2
+
+@listen ( char -- )
+
+	#08 EQUk NIP ,&erase JCN
+	#0a EQUk NIP ,&parse JCN
+	#0d EQUk NIP ,&parse JCN
+	#20 LTHk NIP ,&end JCN
+	#7e GTHk NIP ,&end JCN
+	;input ;slen JSR2 #003f GTH2 ,&end JCN
+	DUP ;input ;sput JSR2
+	DUP ;draw-input JSR2
+	&end
+	POP
+
+JMP2r
+
+&erase ( c -- )
+
+	POP
+	;input ;spop JSR2
+	#00 .Screen/auto DEO
+	#02 ;draw-cursor JSR2
+	.Screen/x DEI2k
+	( clamp ) #0020 GTH2k [ JMP SWP2 POP2 ]
+		ROT DEO2
+	#00 .Screen/sprite DEO
+	#01 .Screen/auto DEO
+	#01 ;draw-cursor ( .. )
+
+JMP2
+
+&parse ( c -- )
+
+	POP
+	;draw-lb JSR2
+	;input ;parse JSR2
+	;input ;sclr ( .. )
+
+JMP2
+
+(
+@|variables )
+
+@set-var ( value* uc -- )
+
+	DUP LIT "H EQU ,&height JCN
+	DUP LIT "P EQU ,&peek JCN
+	DUP LIT "R EQU ,&rand JCN
+	DUP LIT "W EQU ,&width JCN
+	LIT "A SUB DUP ADD .variables ADD STZ2
+
+JMP2r
+
+&height ( v* uc -- )
+	POP .Screen/height DEO2 ;draw-clear ( .. ) JMP2
+&peek ( v* uc -- )
+	POP ;get-var/pval STA2 JMP2r
+&rand ( v* uc -- )
+	POP ORAk #00 EQU #00 SWP ADD2 ;get-var/rval STA2 JMP2r
+&width ( v* uc -- )
+	POP .Screen/width DEO2 ;draw-clear ( .. ) JMP2
+
+@get-var ( uc -- value* )
+
+	DUP LIT "H EQU ,&height JCN
+	DUP LIT "P EQU ,&peek JCN
+	DUP LIT "R EQU ,&random JCN
+	DUP LIT "T EQU ,&time JCN
+	DUP LIT "W EQU ,&width JCN
+	LIT "A SUB DUP ADD .variables ADD LDZ2
+
+JMP2r
+
+&height ( uc -- v* )
+	POP .Screen/height DEI2 JMP2r
+&random ( uc -- v* )
+	POP ;prng JSR2 [ LIT2 &rval ffff ] ( MOD2 ) DIV2k MUL2 SUB2 JMP2r
+&peek ( uc -- v* )
+	POP [ LIT2 &pval 0000 ] LDA2 JMP2r
+&time ( uc -- v* )
+	POP ;make-time JMP2
+&width ( uc -- v* )
+	POP .Screen/width DEI2 JMP2r
+
+(
+@|helpers )
+
+@find-opname ( token -- str* )
+
+	#80 SUB ,&target STR
+	LITr 00
+	;statements-arr
+	&w
+		STHkr [ LIT &target $1 ] EQU ,&done JCN
+		;scap JSR2 INCr
+		INC2 LDAk ,&w JCN
+	POP2
+	;dict/unknown
+	&done
+	POPr
+
+JMP2r
+
+@find-arithmetic ( char -- fn* )
+
+	,&t STR
+	;arithmetic-tbl
+	&l
+		LDAk [ LIT &t $1 ] EQU ,&end JCN
+		INC2 INC2 INC2 LDAk ,&l JCN
+	&end
+	INC2 LDA2
+
+JMP2r
+
+@find-line ( id* -- <line*> )
+
+	,&target STR2
+	;mem/prg
+	&w
+		INC2k INC2 LDA2 [ LIT2 &target $2 ] EQU2 ,&end JCN
+		LDA2 LDA2k ORA ,&w JCN
+	POP2
+	#ffff
+	&end
+
+JMP2r
+
+@find-line-replace ( id* -- <line*> )
+
+	,&target STR2
+	#0000 ,&last STR2
+	;mem
+	&w
+		INC2k INC2 LDA2 [ LIT2 &last $2 ] LTH2 ,&end JCN
+		INC2k INC2 LDA2 ,&last STR2
+		LDA2k INC2 INC2 LDA2 [ LIT2 &target $2 ] EQU2 ,&end JCN
+		LDA2 LDA2k ORA ,&w JCN
+	POP2
+	#ffff
+	&end
+
+JMP2r
+
+@find-line-insert ( id* -- <line*> )
+
+	,&target STR2
+	#0000 ,&last STR2
+	;mem
+	&w
+		INC2k INC2 LDA2 [ LIT2 &last $2 ] LTH2 ,&end JCN
+		INC2k INC2 LDA2 ,&last STR2
+		LDA2k INC2 INC2 LDA2 [ LIT2 &target $2 ] GTH2 ,&end JCN
+		LDA2 LDA2k ORA ,&w JCN
+	POP2
+	#ffff
+	&end
+
+JMP2r
+
+@walk-blank ( str* -- str* )
+
+	&w
+		LDAk #00 EQU ,&end JCN
+		LDAk LIT ", EQU ,&skip JCN
+		LDAk LIT "; EQU ,&skip JCN
+		LDAk #20 GTH ,&end JCN
+		&skip
+		INC2 LDAk ,&w JCN
+	&end
+
+JMP2r
+
+@walk-expr ( str* -- str* number* )
+
+	;walk-number JSR2
+	SWP2 ;walk-blank JSR2 LDAk STH SWP2 STHr
+		;find-arithmetic JSR2 ORAk ,&walk-arithmetic JCN
+	POP2
+
+JMP2r
+
+&walk-arithmetic ( str* number* fn* -- str* number* )
+
+	,&fn STR2
+	,&a STR2
+	INC2 ;walk-number JSR2 ,&b STR2
+	[ LIT2 &a $2 ] [ LIT2 &b $2 ] [ LIT2 &fn $2 ] JSR2
+	SWP2 ;walk-blank JSR2 LDAk STH SWP2 STHr
+		;find-arithmetic JSR2 ORAk ,&walk-arithmetic JCN
+	POP2
+
+JMP2r
+
+@walk-number ( str* -- str* num* )
+
+	;walk-blank JSR2
+	LDAk LIT "$ EQU ,&hex JCN
+	LDAk ;ciuc JSR2 ,&var JCN
+	LDAk ;cidc JSR2 ,&num JCN
+		#0000 OVR2 ;err/number ;draw-error JMP2
+		&num
+	LIT2r 0000
+	&dw
+		LIT2r 000a MUL2r
+		LITr 00
+		LDAk #30 SUB STH ADD2r
+		INC2 LDAk #30 SUB #0a LTH ,&dw JCN
+	STH2r
+
+JMP2r
+
+&var ( str* -- val* )
+
+	INC2k SWP2 LDA ;get-var ( .. )
+
+JMP2
+
+&hex ( str* -- val* )
+
+	( walk $ ) INC2
+	LIT2r 0000
+	&hw
+		LITr 40 SFT2r
+		LITr 00
+		LDAk ;chex JSR2 STH ADD2r
+		INC2 LDAk ;chex JSR2 INC ,&hw JCN
+	STH2r
+
+JMP2r
+
+@walk-quote ( str* -- str* )
+
+	&w
+		LDAk LIT "" EQU ,&end JCN
+		LDAk ;draw-chr JSR2
+		INC2 LDAk ,&w JCN
+	&end
+	( walk " ) INC2
+
+JMP2r
+
+@walk-statement ( str* -- str* token )
+
+	;walk-blank JSR2
+	DUP2 ,&target STR2
+	LITr 00
+	;statements-arr
+	&w
+		DUP2 [ LIT2 &target $2 ] ;sseg JSR2 ,&done JCN
+		;scap JSR2 INCr
+		INC2 LDAk ,&w JCN
+	;slen JSR2 ADD2
+	POPr
+	#00
+
+JMP2r
+	&done ;slen JSR2 ADD2 STHr #80 ADD JMP2r
+
+@clear-program ( -- )
+
+	;mem/prg
+		DUP2 ;store/addr LDA2 ;mem/prg SUB2 ;mclr JSR2
+		;store/addr STA2
+	;mem/prg ;mem/root STA2
+	;variables #0034 ;mclr ( .. )
+
+JMP2
+
+@print-line ( line* -- )
+
+	LIT "# #18 DEO
+	DUP2 ;phex JSR2
+	LIT "- #18 DEO
+	LIT "> #18 DEO
+	LDA2k ;phex JSR2
+	#2018 DEO
+	INC2k INC2 LDA2 ;phex JSR2
+	#2018 DEO
+	DUP2 #0004 ADD2 LDA ;find-opname JSR2 ;pstr JSR2
+	#2018 DEO
+	#0005 ADD2 ;pstr JSR2
+	#0a18 DEO
+
+JMP2r
+
+@list-line ( line* -- line* )
+
+	( push ) ;draw-chr/color LDA STH
+		LDA2k SWP2
+		#06 ;draw-chr/color STA
+		INC2 INC2 LDA2k ;draw-dec JSR2
+		#0b ;draw-chr/color STA
+		#20 ;draw-chr JSR2
+		INC2 INC2 LDAk ;find-opname JSR2 ;draw-str JSR2
+		#20 ;draw-chr JSR2
+	( pop ) STHr ;draw-chr/color STA
+	INC2 ;draw-str JSR2
+	;draw-lb ( .. )
+
+JMP2
+
+@save-line ( line* -- line* )
+
+	LDA2k SWP2
+	INC2 INC2 LDA2k ;fdecimal JSR2
+	#20 ;fchr JSR2
+	INC2 INC2 LDAk ;find-opname JSR2 ;fstr JSR2
+	#20 ;fchr JSR2
+	INC2 ;fstr JSR2
+	#0a ;fchr ( .. )
+
+JMP2
+
+@read-size ( filename* -- size* )
+
+	DUP2 ;sbyte JSR2 ,&w STR
+	INC2 INC2 LDAk LIT "x NEQ ,&cancel JCN
+	INC2 ;sbyte JSR2 [ LIT &w $1 ] SWP
+
+JMP2r
+	&cancel POP2 #1010 JMP2r
+
+@require-file ( str* -- str* )
+
+	;walk-blank JSR2
+	LDAk ,&no-untitled JCN
+		POP2r ;err/file ;draw-error JMP2
+		&no-untitled
+
+JMP2r
+
+(
+@|expression )
+
+@math
+&add ( a* b* -- c* )
+	ADD2 JMP2r
+&sub ( a* b* -- c* )
+	SUB2 JMP2r
+&mul ( a* b* -- c* )
+	MUL2 JMP2r
+&div ( a* b* -- c* )
+	ORAk #00 EQU ,&zdiv JCN 
+	,&sign JSR STH2k MUL2 
+	SWP2 
+	,&sign JSR STH2k MUL2
+	MUL2r SWP2 DIV2 STH2r MUL2
+JMP2r
+&zdiv ( a* b* -- c* )
+	INC2 DIV2 OVR2 ;err/zdiv ;draw-error JMP2
+&sign ( a* -> s* )
+	DUP2 #0f SFT2 #ffff MUL2 #0001 ORA2 JMP2r
+&and ( a* b* -- c* )
+	AND2 JMP2r
+&ora ( a* b* -- c* )
+	ORA2 JMP2r
+&lth ( a* b* -- c* )
+	#8000 STH2k ADD2 SWP2 STH2r ADD2 GTH2 #00 SWP JMP2r
+&gth ( a* b* -- c* )
+	#8000 STH2k ADD2 SWP2 STH2r ADD2 LTH2 #00 SWP JMP2r
+&equ ( a* b* -- c* )
+	EQU2 #00 SWP JMP2r
+&neq ( a* b* -- c* )
+	NEQ2 #00 SWP JMP2r
+&mod ( a* b* -- c* )
+	DIV2k MUL2 SUB2 JMP2r
+
+(
+@|libdefault )
+
+@do-run ( str* -- )
+
+	( no params ) POP2
+	;mem LDA2
+	LDAk ,&no-null JCN
+		POP2 #fffe ;err/empty ;draw-error JMP2
+		&no-null
+	&w
+		;run-line JSR2
+		.queue-ptr LDZ ,&interrupt JCN
+		LDA2k ORA ,&w JCN
+	POP2
+	;draw-ready ( .. )
+
+JMP2
+
+&interrupt ( line* -- )
+
+	.interrupt STZ2
+
+JMP2r
+
+@do-let ( str* -- )
+
+	&w
+		;walk-blank JSR2
+			LDAk LIT "A SUB #1a GTH ,&error JCN
+			LDAk ,&var STR 
+		INC2 ;walk-blank JSR2
+			LDAk LIT "= NEQ ,&error JCN
+		INC2 ;walk-expr JSR2
+			[ LIT &var $1 ] ;set-var JSR2
+		LDAk ,&w JCN
+	POP2
+
+JMP2r
+
+&error ( str* -- )
+
+	 ;err/variable ;draw-error ( .. )
+
+JMP2
+
+@do-rem ( str* -- )
+
+	( no params ) POP2
+
+JMP2r
+
+@do-if ( str* -- )
+
+	;walk-expr JSR2 ORA ,&continue JCN
+		POP2 JMP2r
+		&continue
+	;run-str ( .. )
+
+JMP2
+
+@do-gosub ( str* -- )
+
+	.stack-ptr LDZ #20 LTH ,&no-overflow JCN
+		;err/overflow ;draw-error JMP2
+		&no-overflow
+
+	DUP2 #0005 SUB2 LDA2 INC2 INC2 LDA2 ;stack/push JSR2
+
+@do-goto ( str* -- )
+
+	STH2k
+	;walk-expr JSR2 NIP2 ;find-line JSR2 NIP2
+	INC2k ORA ,&no-error JCN
+		STH2r ;walk-blank JSR2 ;err/line ;draw-error JMP2
+		&no-error
+	POP2r
+
+JMP2r
+
+@do-return ( str* -- )
+
+	( no params ) POP2
+	.stack-ptr LDZ ,&no-underflow JCN
+		#fffe ;err/underflow ;draw-error JMP2
+		&no-underflow
+	;stack/pop JSR2 NIP2 ;find-line ( .. )
+
+JMP2
+
+@do-clear ( str* -- )
+
+	( no params ) POP2
+	;load-theme JSR2
+	;clear-program ( .. )
+
+JMP2
+
+@do-input ( str* -- )
+
+	&w
+		;walk-blank JSR2
+		LDAk ;ciuc JSR2 #00 EQU ,&no-var JCN
+		.queue-ptr LDZ #10 EQU ,&no-var JCN
+			LDAk ;queue/push JSR2
+			&no-var
+		INC2 LDAk ,&w JCN
+	POP2
+
+JMP2r
+
+@do-list ( str* -- )
+
+	;mem/prg LDA2 ORA ,&no-empty JCN
+		;err/empty ;draw-error JMP2
+		&no-empty
+
+	LDAk ,&param JCN
+	POP2
+	;mem LDA2
+	&w
+		INC2k INC2 LDA2 STH2
+		;list-line JSR2
+		INC2k INC2 LDA2 STH2r GTH2 ,&w JCN
+	&end
+	POP2
+
+JMP2r
+
+&param ( str* -- )
+
+	 ;walk-expr JSR2 NIP2 ;find-line JSR2
+		;list-line JSR2 POP2
+
+JMP2r
+
+@do-print ( str* -- )
+
+	#00 ,&lb STR
+	&w
+		;walk-blank JSR2
+		LDAk LIT "" NEQ ,&no-string JCN
+			#01 ,&lb STR
+			INC2 ;walk-quote JSR2 ,&w JMP
+			&no-string
+		LDAk LIT "' NEQ ,&no-char JCN
+			INC2 ;walk-expr JSR2 NIP ;draw-chr JSR2 ,&w JMP
+			&no-char
+		LDAk ;cixp JSR2 #00 EQU ,&no-expr JCN
+			;walk-expr JSR2 ;draw-sdec JSR2 ,&w JMP
+			&no-expr
+		LDAk #00 EQU ,&end JCN
+			;err/print ;draw-error JMP2
+			&end
+	POP2
+	[ LIT &lb $1 ] ;draw-lb JCN2
+
+JMP2r
+
+@do-end ( str* -- )
+
+	( no params ) POP2
+	POP2 #fff0
+
+JMP2r
+
+(
+@|libdraw )
+
+@do-mode ( str* -- )
+
+	;walk-expr JSR2 NIP2 NIP ;draw-chr/color STA
+
+JMP2r
+
+@do-draw ( str* -- )
+
+	;walk-expr JSR2
+		DUP2 .Screen/x DEO2
+		;draw-lb/anchor STA2
+	;walk-expr JSR2 .Screen/y DEO2
+	POP2
+
+JMP2r
+
+@do-color ( str* -- )
+
+	LDAk #00 EQU ,&skip JCN
+	;walk-expr JSR2 .System/r DEO2
+	;walk-expr JSR2 .System/g DEO2
+	;walk-expr JSR2 .System/b DEO2
+	&skip
+	POP2
+
+JMP2r
+
+@do-cls ( str* -- )
+
+	POP2 ;draw-clear ( .. )
+
+JMP2
+
+@do-sprite ( str* -- )
+
+	;buf STHk #0008 ;mclr JSR2
+	;walk-expr JSR2 STHkr STZ2 INCr INCr
+	;walk-expr JSR2 STHkr STZ2 INCr INCr
+	;walk-expr JSR2 STHkr STZ2 INCr INCr
+	;walk-expr JSR2 STHr STZ2
+	POP2
+	;buf .Screen/addr DEO2
+	;draw-chr/color LDA .Screen/sprite DEO
+
+JMP2r
+
+@do-pict ( str* -- )
+
+	;walk-blank JSR2 ;draw-pict ( .. )
+
+JMP2
+
+(
+@|libsystem )
+
+@do-save ( str* -- )
+
+	;require-file JSR2 .File/name DEO2
+	;mem/prg
+	&w
+		;save-line JSR2
+		LDA2k ORA ,&w JCN
+	POP2
+	;draw-ready ( .. )
+
+JMP2
+
+@do-load ( str* -- )
+
+	;require-file JSR2
+
+	;clear-program JSR2
+	;buf ;scpy JSR2
+	;input ;sclr JSR2
+	;buf .File/name DEO2
+	#0001 .File/length DEO2
+	&s
+		;&b .File/read DEO2
+		.File/success DEI2 #0000 EQU2 ,&end JCN
+		[ LIT &b $1 ] ;listen JSR2
+		,&s JMP
+		&end
+	;draw-ready ( .. )
+
+JMP2
+
+@do-make ( str* -- )
+
+	;require-file JSR2 .File/name DEO2
+	;store/addr LDA2 #0100 SUB2 .File/length DEO2
+	#0100 .File/write DEO2
+	;draw-ready ( .. )
+
+JMP2
+
+@do-poke ( str* -- )
+
+	;walk-expr JSR2 STH2 ;walk-expr JSR2 NIP2 STH2r STA2
+
+JMP2r
+
+(
+@|stacks )
+
+@queue
+
+&push ( var -- )
+
+	.queue-mem .queue-ptr LDZ STHk ADD STZ
+	STHr INC .queue-ptr STZ
+	;draw-queue ( .. )
+
+JMP2
+
+&pop ( -- var )
+
+	.queue-ptr LDZ #01 SUB STHk .queue-ptr STZ
+	.queue-mem STHr ADD LDZ
+	;draw-queue ( .. )
+
+JMP2
+
+@stack
+
+&push ( line* -- )
+
+	.stack-mem .stack-ptr LDZ STHk ADD STZ2
+	STHr INC INC .stack-ptr STZ
+
+JMP2r
+
+&pop ( -- <line*> )
+
+	.stack-ptr LDZ #02 SUB STHk .stack-ptr STZ
+	.stack-mem STHr ADD LDZ2
+
+JMP2r
+
+@pen
+
+&push ( -- )
+
+	#00 ;draw-cursor JSR2
+	.Screen/x DEI2 #03 SFT2 NIP
+	.Screen/y DEI2 #03 SFT2 NIP
+	.pen-mem .pen-ptr LDZ ADD STZ2
+	.pen-ptr LDZ2k INC2 INC2 ROT STZ2
+
+JMP2r
+
+&pop ( -- )
+
+	.pen-ptr LDZ2k #0002 SUB2 ROT STZ2
+	.pen-mem .pen-ptr LDZ ADD LDZ2
+	#00 SWP #30 SFT2 .Screen/y DEO2
+	#00 SWP #30 SFT2 .Screen/x DEO2
+
+JMP2r
+
+(
+@|draw )
+
+@redraw-all ( -- )
+
+	;draw-clear JSR2
+	#01 ;draw-cursor ( .. )
+
+JMP2
+
+@draw-welcome ( -- )
+
+	;mem/prg ;store/addr STA2
+	;dict/varvara ;draw-str JSR2
+	,draw-lb JSR ,draw-lb JSR
+	;dict/ram ;draw-str JSR2
+	#ffff ;mem/prg SUB2 ;draw-dec JSR2
+	;dict/intro ;draw-str JSR2
+	,draw-lb JSR
+
+@draw-ready ( -- )
+
+	,draw-lb JSR
+	;dict/ready ;draw-str JSR2
+
+@draw-lb ( -- )
+
+	#02 ;draw-cursor JSR2
+	[ LIT2 &anchor 0020 ] .Screen/x DEO2
+	.Screen/y DEI2k #0008 ADD2 STH2k ROT DEO2
+	STH2r .Screen/height DEI2 #0018 SUB2 LTH2 ,&page JCN
+		;draw-clear JSR2
+		&page
+	#01 ;draw-cursor ( .. )
+
+JMP2
+
+@draw-clear ( -- )
+
+	#0018 .Screen/x DEO2
+	#0018 .Screen/y DEO2
+	#0020 ;draw-lb/anchor STA2
+	;spritesheet/fill .Screen/addr DEO2
+	#01 .Screen/auto DEO
+	.Screen/width DEI2 #03 SFT2 NIP #06 SUB ,&width STR
+	.Screen/height DEI2 #03 SFT2 NIP #06 SUB ,&height STR
+	[ LIT &height $1 ] #00
+	&v
+		[ LIT &width $1 ] #00
+		&h
+			#02 .Screen/sprite DEO
+			INC GTHk ,&h JCN
+		POP2
+		#0018 .Screen/x DEO2
+		.Screen/y DEI2k #0008 ADD2 ROT DEO2
+		INC GTHk ,&v JCN
+	POP2
+	#0020 .Screen/x DEO2
+	#0018 .Screen/y DEO2
+	;draw-lb ( .. )
+
+JMP2
+
+@draw-pict ( name* -- )
+
+	#0008 .File/length DEO2
+	DUP2 .File/name DEO2
+	;scap JSR2 #0009 SUB2 ;read-size JSR2
+		,&height STR
+		,&width STR
+	.Screen/x DEI2 ,&anchor STR2
+	;buf .Screen/addr DEO2
+	( draw )
+	#01 .Screen/auto DEO
+	[ LIT &height $1 ] #00
+	&v
+		[ LIT2 &anchor $2 ] .Screen/x DEO2
+		[ LIT &width $1 ] #00
+		&h
+			;buf .File/read DEO2
+			;draw-chr/color LDA .Screen/sprite DEO
+			INC GTHk ,&h JCN
+		POP2
+		.Screen/y DEI2k #0008 ADD2 ROT DEO2
+		INC GTHk ,&v JCN
+	POP2
+
+JMP2r
+
+@draw-error ( str* name* -- )
+
+	;err ;draw-str JSR2
+	LIT "< ;draw-chr JSR2 ;draw-str JSR2 LIT "> ;draw-chr JSR2
+	LIT ": ;draw-chr JSR2
+	#20 ;draw-chr JSR2
+	;draw-str JSR2
+	;draw-lb ( .. )
+
+JMP2
+
+@draw-sdec ( short* -- )
+
+	OVR #80 AND #00 EQU ,draw-dec JCN
+		LIT "- ;draw-chr JSR2
+		#7fff AND2 #8000 SWP2 SUB2
+
+@draw-dec ( short* -- )
+
+	#01 .Screen/auto DEO
+	#00 ,&z STR
+	#2710 ,&parse JSR
+	#03e8 ,&parse JSR
+	#0064 ,&parse JSR
+	#000a ,&parse JSR
+	NIP #30 ADD ;draw-chr ( .. )
+
+JMP2
+	&parse
+		DIV2k DUPk [ LIT &z $1 ] EQU ,&skip JCN
+		DUP #30 ADD ;draw-chr JSR2 #ff ,&z STR
+		&skip POP MUL2 SUB2
+	JMP2r
+
+@draw-input ( char -- )
+
+	,draw-chr JSR
+	#01
+
+@draw-cursor ( color -- )
+
+	;spritesheet/fill .Screen/addr DEO2
+	.Screen/sprite DEO
+	.Screen/x DEI2k #0008 SUB2 ROT DEO2
+
+JMP2r
+
+@draw-str ( str* -- )
+
+	LDAk #00 EQU ,&skip JCN
+	&while
+		LDAk ,draw-chr JSR
+		INC2 LDAk ,&while JCN
+	&skip
+	POP2
+
+JMP2r
+
+@draw-chr ( char -- )
+
+	.Screen/x DEI2 .Screen/width DEI2 #0020 SUB2 LTH2 ,&visible JCN
+		POP JMP2r
+		&visible
+	#20 SUB #00 SWP #30 SFT2 ;font ADD2 .Screen/addr DEO2
+	[ LIT &color 09 ] .Screen/sprite DEO
+
+JMP2r
+
+@draw-pointer ( color -- )
+
+	STH
+	.Screen/x DEI2 .Screen/y DEI2
+	.cursor/x LDZ2 .Screen/x DEO2
+	.cursor/y LDZ2 .Screen/y DEO2
+	STHr .Screen/sprite DEO
+	.Screen/y DEO2 .Screen/x DEO2
+
+JMP2r
+
+@draw-queue ( -- )
+
+	;pen/push JSR2
+	.Screen/height DEI2 #0010 SUB2 .Screen/y DEO2
+	.queue-ptr LDZ #00 EQUk ,&skip JCN
+	&l
+		DUP .queue-mem ADD LDZ ;draw-chr JSR2
+		INC GTHk ,&l JCN
+	&skip
+	#00 ;draw-cursor JSR2
+	POP2
+	;pen/pop ( .. )
+
+JMP2
+
+(
+@|theme )
+
+@load-theme ( -- )
+
+	;&path .File/name DEO2
+	#0002 .File/length DEO2
+	;&r .File/read DEO2
+	;&g .File/read DEO2
+	;&b .File/read DEO2
+	.File/success DEI2 ORA #01 JCN JMP2r
+	LIT2 &r $2 .System/r DEO2
+	LIT2 &g $2 .System/g DEO2
+	LIT2 &b $2 .System/b DEO2
+
+JMP2r
+	&path ".theme $1
+
+(
+@|random )
+
+@prng-init ( -- )
+
+	#00 .DateTime/second DEI
+	#00 .DateTime/minute DEI #60 SFT2 EOR2
+	#00 .DateTime/hour DEI #c0 SFT2 EOR2 ,prng/x STR2
+	#00 .DateTime/hour DEI #04 SFT2
+	#00 .DateTime/day DEI DUP2 ADD2 EOR2
+	#00 .DateTime/month DEI #60 SFT2 EOR2
+	.DateTime/year DEI2 #a0 SFT2 EOR2 ,prng/y STR2
+
+JMP2r
+
+@prng ( -- number* )
+
+	LIT2 &x $2
+	DUP2 #50 SFT2 EOR2
+	DUP2 #03 SFT2 EOR2
+	LIT2 &y $2 DUP2 ,&x STR2
+	DUP2 #01 SFT2 EOR2 EOR2
+	,&y STR2k POP
+
+JMP2r
+
+@make-time ( -- time* )
+
+	#00 .DateTime/second DEI
+	#00 .DateTime/minute DEI #003c MUL2 ADD2
+	#00 .DateTime/hour DEI #0c ( MOD ) DIVk MUL SUB #0e10 MUL2 ADD2
+
+JMP2r
+
+(
+@|stdlib )
+
+@cixp ( c -- f )
+
+	DUP ;ciuc JSR2 ,&p JCN
+	DUP ;cidc JSR2 ,&p JCN
+	LIT "$ EQU
+
+JMP2r
+	&p POP #01 JMP2r
+
+@chex ( c -- val ) LIT "0 SUB DUP #09 GTH JMP JMP2r #27 SUB DUP #0f GTH JMP JMP2r POP #ff JMP2r
+@sbyte ( str* -- byte ) LDAk ,chex JSR #40 SFT STH INC2 LDA ,chex JSR STHr ADD JMP2r
+@ciuc ( c -- f ) LIT "A SUB #1a LTH JMP2r
+@cidc ( c -- f ) LIT "0 SUB #0a LTH JMP2r
+@scap ( str* -- end* ) #00
+@schr ( str* chr -- str* ) STH &w LDAk STHkr EQU ,&e JCN INC2 LDAk ,&w JCN &e POPr JMP2r
+@spop ( str* -- ) LDAk ,&n JCN POP2 JMP2r &n ,scap JSR #0001 SUB2 #00 ROT ROT STA JMP2r
+@sput ( chr str* -- ) ,scap JSR INC2k #00 ROT ROT STA STA JMP2r
+@slen ( str* -- len* ) DUP2 ,scap JSR SWP2 SUB2 JMP2r
+@scpy ( src* dst* -- ) STH2 &w LDAk STH2kr STA INC2r INC2 LDAk ,&w JCN POP2 #00 STH2r STA JMP2r
+@sseg ( a* b* -- bool ) STH2 &w LDAk LDAkr STHr NEQ ,&e JCN INC2r INC2 LDAk ,&w JCN &e POP2r LDA #00 EQU JMP2r
+@sclr ( str* -- ) LDAk ,&w JCN POP2 JMP2r &w STH2k #00 STH2r STA INC2 LDAk ,&w JCN POP2 JMP2r
+@mclr ( src* len* -- ) OVR2 ADD2 SWP2 &l STH2k #00 STH2r STA INC2 GTH2k ,&l JCN POP2 POP2 JMP2r
+
+@fchr ( chr -- ) ,&b STR #0001 .File/length DEO2 ;&b .File/write DEO2 JMP2r &b $1
+@fstr ( str* -- ) DUP2 ;slen JSR2 .File/length DEO2 .File/write DEO2 JMP2r
+
+@fdecimal ( short* -- )
+
+	#00 ,&z STR
+	#2710 ,&parse JSR
+	#03e8 ,&parse JSR
+	#0064 ,&parse JSR
+	#000a ,&parse JSR
+	NIP #30 ADD ;fchr ( .. )
+
+JMP2
+	&parse
+		DIV2k DUPk [ LIT &z $1 ] EQU ,&skip JCN
+		DUP #30 ADD ;fchr JSR2 #ff ,&z STR
+		&skip POP MUL2 SUB2
+	JMP2r
+
+@pstr ( str* -- ) LDAk #00 EQU ,&e JCN &w LDAk #18 DEO INC2 LDAk ,&w JCN &e POP2 JMP2r
+@phex ( short* -- ) SWP ,&b JSR &b DUP #04 SFT ,&c JSR &c #0f AND DUP #09 GTH #27 MUL ADD #30 ADD #18 DEO JMP2r
+
+@pmem ( addr* -- )
+
+	STH2
+	#0000
+	&l
+		#00 OVR STH2kr ADD2 LDA ,phex/b JSR
+		DUP #0f AND #0f NEQ #16 MUL #0a ADD #18 DEO
+		INC NEQk ,&l JCN
+	POP2
+	POP2r
+
+JMP2r
+
+(
+@|assets )
+
+@statements-arr
+	"LET $1 "GOTO $1 "REM $1 "IF $1
+	"GOSUB $1  "CLEAR $1 "INPUT $1 "RETURN $1
+	 "LIST $1 "PRINT $1 "END $1 "RUN $1
+	( display ) "COLOR $1 "CLS $1 "DRAW $1 "MODE $1 "SPRITE $1 "PICT $1
+	( system ) "SAVE $1 "LOAD $1 "MAKE $1 "POKE $1 
+	$1
+
+@statements-tbl
+	=do-let =do-goto =do-rem =do-if
+	=do-gosub =do-clear =do-input =do-return
+	=do-list =do-print =do-end =do-run
+	( display ) =do-color =do-cls =do-draw =do-mode =do-sprite =do-pict
+	( system ) =do-save =do-load =do-make =do-poke
+
+@arithmetic-tbl
+	"+ =math/add "- =math/sub
+	"* =math/mul "/ =math/div
+	"& =math/and "| =math/ora
+	"< =math/lth "> =math/gth
+	"= =math/equ "! =math/neq
+	"% =math/mod
+	$3
+
+@dict
+	&varvara "*** 20 "VARVARA 20 "BASIC 20 "*** $1
+	&ram "64K 20 "RAM 20 "SYSTEM 20 20 $1
+	&intro 20 "BASIC 20 "BYTES 20 "FREE $1
+	&ready "READY. $1
+	&unknown "??? $1
+
+@err
+	"ERROR $1
+	&empty "NO-PROGRAM $1
+	&underflow "UNDERFLOW $1
+	&overflow "OVERFLOW $1
+	&number "NUMBER $1
+	&variable "VARIABLE $1
+	&command "COMMAND $1
+	&line "LINE $1
+	&file "FILE $1
+	&print "PRINT $1
+	&todo "APPEND-ONLY-MODE $1
+	&zdiv "DIV-BY-ZERO $1
+
+@spritesheet
+	&fill ffff ffff ffff ffff
+	&pointer 0040 6070 787c 7008
+	&hand 2020 20b8 7c7c 3838
+
+@font ( atari8 )
+0000 0000 0000 0000 6060 6060 6000 6000
+6666 6600 0000 0000 006c fe6c 6cfe 6c00
+183e 603c 067c 1800 0066 6c18 3066 4600
+386c 3870 decc 7600 6060 6000 0000 0000
+1c30 3030 3030 1c00 380c 0c0c 0c0c 3800
+0066 3cff 3c66 0000 0018 187e 1818 0000
+0000 0000 0030 3060 0000 007e 0000 0000
+0000 0000 0018 1800 0306 0c18 3060 c000
+3c66 6e76 6666 3c00 1838 1818 1818 7e00
+3c66 060c 1830 7e00 7e0c 180c 0666 3c00
+0c1c 3c6c 7e0c 0c00 7e60 7c06 0666 3c00
+3c60 607c 6666 3c00 7e06 0c18 3030 3000
+3c66 663c 6666 3c00 3c66 663e 060c 3800
+0018 1800 0018 1800 0018 1800 1818 3000
+0c18 3060 3018 0c00 0000 7e00 007e 0000
+3018 0c06 0c18 3000 3c66 060c 1800 1800
+3c66 6e6a 6e60 3e00 183c 6666 7e66 6600
+7c66 667c 6666 7c00 3c66 6060 6066 3c00
+786c 6666 666c 7800 7e60 607c 6060 7e00
+7e60 607c 6060 6000 3e60 606e 6666 3e00
+6666 667e 6666 6600 3c18 1818 1818 3c00
+3e06 0606 0666 3c00 666c 7870 786c 6600
+6060 6060 6060 7e00 c6ee fed6 c6c6 c600
+6676 7e7e 6e66 6600 3c66 6666 6666 3c00
+7c66 667c 6060 6000 3c66 6666 766c 3600
+7c66 667c 6c66 6600 3c66 603c 0666 3c00
+7e18 1818 1818 1800 6666 6666 6666 3e00
+6666 6666 663c 1800 c6c6 c6d6 feee c600
+6666 3c18 3c66 6600 6666 663c 1818 1800
+7e06 0c18 3060 7e00 3c30 3030 3030 3c00
+c060 3018 0c06 0300 3c0c 0c0c 0c0c 3c00
+1038 6cc6 0000 0000 0000 0000 0000 fe00
+0060 3018 0000 0000 0000 3c06 3e66 3e00
+6060 7c66 6666 7c00 0000 3c60 6060 3c00
+0606 3e66 6666 3e00 0000 3c66 7e60 3c00
+1c30 7c30 3030 3000 0000 3e66 663e 067c
+6060 7c66 6666 6600 1800 3818 1818 3c00
+1800 1818 1818 1870 6060 666c 786c 6600
+3818 1818 1818 3c00 0000 ecfe d6c6 c600
+0000 7c66 6666 6600 0000 3c66 6666 3c00
+0000 7c66 6666 7c60 0000 3e66 6666 3e06
+0000 7c66 6060 6000 0000 3e60 3c06 7c00
+0018 7e18 1818 0e00 0000 6666 6666 3e00
+0000 6666 663c 1800 0000 c6c6 d67c 6c00
+0000 663c 183c 6600 0000 6666 663e 067c
+0000 7e0c 1830 7e00 1c30 3060 3030 1c00
+1818 1818 1818 1818 380c 0c06 0c0c 3800
+0000 60f2 9e0c 0000 0018 1834 3462 7e00
+
+$2
+
+@mem
+	&root
+		=&prg
+		0000
+		00
+	&prg
+
+	( line: 
+		0000 link* 
+		0002 id* 
+		0004 statement 
+		0005 body[] )
