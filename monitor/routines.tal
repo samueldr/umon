@@ -48,7 +48,7 @@
 ( Ouput a NULL-terminated string to the console )
 @monitor:puts ( str* -- )
 	LDAk monitor:bios:putc
-	INC2 LDAk ?puts
+	INC2 LDAk ?monitor:puts
 	POP2
 	JMP2r
 

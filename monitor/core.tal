@@ -73,7 +73,7 @@
 	)
 
 	( Then print the prompt )
-	;/ps1 puts
+	;/ps1 monitor:puts
 	JMP2r
 	&ps1 "> 20 00
 
