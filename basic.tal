@@ -1,4 +1,4 @@
-( Tiny BASIC )
+( Tiny BASIC + monitor demo )
 
 (
 Based on:
@@ -847,6 +847,11 @@ JMP2
 
 JMP2r
 
+@do-monitor ( str* -- )
+	( no params ) POP2
+	monitor:start
+	JMP2r
+
 (
 @|stacks )
 
@@ -1210,6 +1215,7 @@ JMP2r
 	 "LIST $1 "PRINT $1 "END $1 "RUN $1
 	( display ) "COLOR $1 "CLS $1 "DRAW $1 "MODE $1 "SPRITE $1 "PICT $1
 	( system ) "SAVE $1 "LOAD $1 "MAKE $1 "POKE $1 
+	( monitor demo ) "MON $1
 	$1
 
 @statements-tbl
@@ -1218,6 +1224,7 @@ JMP2r
 	=do-list =do-print =do-end =do-run
 	( display ) =do-color =do-cls =do-draw =do-mode =do-sprite =do-pict
 	( system ) =do-save =do-load =do-make =do-poke
+	( monitor demo ) =do-monitor
 
 @arithmetic-tbl
 	"+ =math/add "- =math/sub
@@ -1305,6 +1312,112 @@ c060 3018 0c06 0300 3c0c 0c0c 0c0c 3c00
 0000 60f2 9e0c 0000 0018 1834 3462 7e00
 
 $2
+
+( Starting here, the inserted code is to support the language monitor. )
+( It is shoved "between" the data and the "program memory" )
+( Alternatively, locating at a specific address could be done. )
+@monitor
+@monitor:_start
+
+@monitor:basic-bios
+
+@monitor:bios:debug
+	( Use the System/debug port )
+	#01 ( .System/debug  ) #0e DEO
+	( Though we could also do stack manipulations to print some of it on the GUI for the demo? )
+	JMP2r
+
+@monitor:bios:putc ( chr -- )
+	( Handle newlines )
+	DUP #0a NEQk ?{
+		draw-lb POP ( chr -- )
+	}
+	EQU ?{
+		draw-chr    ( chr -- )
+	}
+	[ #01 draw-cursor ]
+	JMP2r
+
+@monitor:bios:getc ( -- chr )
+	LIT &char 00
+	JMP2r
+
+( Hot-patch to go to our monitor _parse method )
+@monitor:bios:hook_console
+	( Save the first four bytes from `@parse` )
+	;parse                   LDA2
+	;/_saved
+	STA2
+	;parse         INC2 INC2 LDA2
+	;/_saved       INC2 INC2
+	STA2
+
+	( Load the replacement instructions )
+	;/_replacement           LDA2
+	;parse
+	STA2
+	;/_replacement INC2 INC2 LDA2
+	;parse         INC2 INC2
+	STA2
+
+	POP2r ( Skip monitor:start JMP2r, since this is not a macro. )
+	JMP2r
+	&_replacement [
+		;monitor:bios:_parse JMP2
+		( 1,2,3,              4 )
+	]
+	&_saved  $4
+
+( Loads back the original parser )
+@monitor:bios:unhook_console
+	;monitor:bios:hook_console/_saved           LDA2
+	;parse
+	STA2
+	;monitor:bios:hook_console/_saved INC2 INC2 LDA2
+	;parse                            INC2 INC2
+	STA2
+
+	JMP2r
+
+%monitor:bios:on-console-start {
+	( no-op )
+}
+
+%monitor:bios:on-console-end {
+	( Makes `on-console` end in a JMP2r )
+	JMP2r
+}
+
+( Replacement method for `@parse`. )
+( Must follow the same semantics. )
+@monitor:bios:_parse ( str* -- )
+	&_start
+	LDAk
+	[
+		;monitor:bios:getc/char STA
+		monitor:on-console
+	]
+	INC2 LDAk ?/_start
+	( We're done, drop the string pointer. )
+	POP2
+
+	( Since the basic parser routins eat the newline )
+	[
+		( Feed a synthetic newline )
+		#0a
+		;monitor:bios:getc/char STA
+		monitor:on-console
+	]
+
+	JMP2r
+
+@monitor:basic-bios:end
+
+~monitor/routines.tal
+~monitor/core.tal
+
+( Done with the monitor compatibility implementation )
+
 
 @mem
 	&root
