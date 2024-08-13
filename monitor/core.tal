@@ -86,8 +86,8 @@
 	monitor:bios:getc
 
 	( Flush [complete] in-flight commands as needed )
-	DUP LIT 0a NEQ ?{ monitor:command:flush monitor:prompt POP !/done }
-	DUP LIT 20 NEQ ?{ monitor:command:flush                POP !/done }
+	DUP LIT 0a NEQ ?{ monitor:command:flush POP !/done }
+	DUP LIT 20 NEQ ?{ monitor:command:flush POP !/done }
 	
 	( Otherwise continue to the currently configured parser )
 	[ LIT2 &current-parser 0000 ] JSR2

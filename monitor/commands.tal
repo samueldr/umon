@@ -18,13 +18,26 @@
 	DUP .monitor:Command/pop       NEQ ?{ POP !monitor:command:pop }
 	DUP .monitor:Command/push      NEQ ?{ POP !monitor:command:push }
 
-	( Drop the command loaded previously )
-	POP
-
 	( Skip to here when manipulating stack )
 	&stack-done
 
+	( Check if we need to print the prompt again )
+	SWP
+	[ DUP LIT 0a NEQ ] ?{
+		monitor:prompt
+	}
+	SWP
+
 	monitor:reset-state
+
+	( When it's a write command )
+	.monitor:Command/write NEQ ?{
+		( Sets back command to write )
+		.monitor:Command/write ;monitor:variables/cmd STA
+		( Set the fallback parser to continue value parsing/handling/flushing )
+		;monitor:parser:value ;monitor:parser:commands/fallback STA2
+	} ( Also drops the command from WST )
+
 	JMP2r
 
 @monitor:command:show
