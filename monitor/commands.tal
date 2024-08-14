@@ -45,8 +45,9 @@
 @monitor:command:show
 	( Load the end address on WST [promoted to short] )
 	#00 ;monitor:variables/value LDA ( -- length* )
+	DUP ?{ POP #01 }
 	;monitor:variables/current LDA2  ( length* -- length* current* )
-	ADD2 INC2                        ( length* current* -- end* )
+	ADD2                             ( length* current* -- end* )
 	( Load the current address on WST )
 	;monitor:variables/current LDA2  ( end* -- end working_address )
 
