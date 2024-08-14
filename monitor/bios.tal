@@ -30,15 +30,15 @@
 ( Setup the platform-specific monitor parts )
 %monitor:bios:hook_console {
 	( Save the current console vector )
-	[ .Console/vector DEI2 ] ;monitor:stop/con-vec STA2
-	;monitor:on-console .Console/vector DEO2
+	[ ( .Console/vector ) #10  DEI2 ] ;monitor:stop/con-vec STA2
+	;monitor:on-console ( .Console/vector ) #10  DEO2
 	( Stop the current vector, whichever it is. )
 	BRK
 }
 
 %monitor:bios:unhook_console {
 	( Restore console vector )
-	[ LIT2 &con-vec 0000 ] .Console/vector DEO2
+	[ LIT2 &con-vec 0000 ] ( .Console/vector ) #10  DEO2
 }
 
 %monitor:bios:on-console-start {
